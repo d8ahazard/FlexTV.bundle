@@ -24,17 +24,17 @@ class CustomContainer(ObjectClass):
 
     def add(self, obj):
         if self.children is None:
-            self.items.append(obj)
+            append = True
         else:
             append = False
             for child in self.children:
                 if obj.name == child:
                     append = True
 
-            if append is True:
-                self.items.append(obj)
-            else:
-                Log.Error("Child type %s is not allowed" % obj.name)
+        if append is True:
+            self.items.append(obj)
+        else:
+            Log.Error("Child type %s is not allowed" % obj.name)
 
     def to_xml(self):
         string = ""
@@ -43,9 +43,6 @@ class CustomContainer(ObjectClass):
         if self.show_size is True:
             size = str(len(self.items))
             string += (' size="' + size + '"')
-
-        version = "1.1.105"
-        string += (' version="' + version + '"')
 
         if self.dict is not None:
             for key, value in self.dict.items():
@@ -57,7 +54,12 @@ class CustomContainer(ObjectClass):
                             allowed = True
 
                 if allowed is True:
-                    string += (" " + key + '="' + str(value) + '"')
+                    value = str(value)
+                    value = value.replace("&", "&amp;")
+                    value = value.replace("<", "&lt;")
+                    value = value.replace(">", "&gt;")
+                    value = value.replace("\"", "&quot;")
+                    string += (" " + key + '="' + value + '"')
                 else:
                     Log.Error("Attribute " + key + " is not allowed in this container.")
 
@@ -65,7 +67,10 @@ class CustomContainer(ObjectClass):
         if count >= 1:
             string += '>\n'
             for obj in self.items:
-                string += obj.to_xml()
+                if type(obj) == str:
+                    Log.Error("Here's a string: '%s" % obj)
+                else:
+                    string += obj.to_xml()
 
             string += '</' + self.name + '>'
 
@@ -95,29 +100,12 @@ class MetaContainer(CustomContainer):
 
 
 # Class to emulate proper Plex device container
-class DeviceContainer(CustomContainer):
+class StatContainer(CustomContainer):
     def __init__(self, dict=None):
         self.show_size = False
         self.dict = dict
-        self.name = "Device"
-        allowed_attributes = [
-            "name",
-            "publicAddress",
-            "product",
-            "productVersion",
-            "platform",
-            "platformVersion",
-            "device",
-            "model",
-            "vendor",
-            "id",
-            "token"
-            "createdAt",
-            "lastSeenAt",
-            "screenResolution",
-            "screenDensity"
-        ]
-
+        self.name = "Tag"
+        allowed_attributes = None
         allowed_children = [
             "Connection"
         ]
@@ -125,20 +113,39 @@ class DeviceContainer(CustomContainer):
         CustomContainer.__init__(self, allowed_attributes, allowed_children)
 
 
-class CastContainer(CustomContainer):
+class UserContainer(CustomContainer):
     def __init__(self, dict=None):
         self.show_size = False
         self.dict = dict
-        self.name = "Device"
-        CustomContainer.__init__(self)
+        self.name = "User"
+        allowed_attributes = None
+        allowed_children = [
+            "View", "Media", "Stats"
+        ]
+
+        CustomContainer.__init__(self, allowed_attributes, allowed_children)
 
 
-class StatusContainer(CustomContainer):
+class ViewContainer(CustomContainer):
     def __init__(self, dict=None):
         self.show_size = False
         self.dict = dict
-        self.name = "Status"
-        CustomContainer.__init__(self)
+        self.name = "View"
+        allowed_attributes = None
+        allowed_children = None
+
+        CustomContainer.__init__(self, allowed_attributes, allowed_children)
+
+
+class AnyContainer(CustomContainer):
+    def __init__(self, dict=None, name="Any", show_size=True):
+        self.show_size = show_size
+        self.dict = dict
+        self.name = name
+        allowed_attributes = None
+        allowed_children = None
+
+        CustomContainer.__init__(self, allowed_attributes, allowed_children)
 
 
 class ZipObject(ObjectClass):
