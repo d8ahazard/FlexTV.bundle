@@ -2133,7 +2133,7 @@ def query_library_growth(headers):
 
 
 def query_library_popular():
-    headers = sort_headers(["Container-Start", "Container-Size", "Type", "Section", "Start", "End", "Interval"])
+    headers = sort_headers(["Container-Start", "Container-Size", "Type", "Section", "Start", "End", "Interval", "Sort"])
 
     container_size = int(headers.get("Container-Size") or 10000)
     container_start = int(headers.get("Container-Start") or DEFAULT_CONTAINER_START)
@@ -2144,7 +2144,7 @@ def query_library_popular():
     Log.Debug("Querying most popular media")
     entitlements = get_entitlements()
     selector = "AND mi.library_section_id IN %s AND sm.title != ''" % entitlements
-
+    sort = headers.get("Sort") or "Total"
     section = headers.get("Section") or False
     if section:
         selector += " AND mi.library_section_id = %s" % section
@@ -2229,8 +2229,11 @@ def query_library_popular():
         for rating_key in record_dict:
             dicts = record_dict[rating_key]
             meta_items.append(dicts)
-
-        meta_items = sorted(meta_items, key=lambda i: i['viewCount'], reverse=True)
+        if sort == "User":
+            param = "userCount"
+        else:
+            param = "viewCount"
+        meta_items = sorted(meta_items, key=lambda i: i[param], reverse=True)
         for item in meta_items:
             meta_type = item['metaType']
             meta_list = []
