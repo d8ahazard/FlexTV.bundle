@@ -591,7 +591,31 @@ def Genre():
 
 @route(STAT_PREFIX + '/tag/country')
 def Country():
-    mc = build_tag_container("tags_country")
+    mc = build_tag_container("country")
+    return mc
+
+
+@route(STAT_PREFIX + '/tag/mood')
+def Mood():
+    mc = build_tag_container("mood")
+    return mc
+
+
+@route(STAT_PREFIX + '/tag/autotag')
+def Autotag():
+    mc = build_tag_container("autotag")
+    return mc
+
+
+@route(STAT_PREFIX + '/tag/collection')
+def Collection():
+    mc = build_tag_container("collection")
+    return mc
+
+
+@route(STAT_PREFIX + '/tag/similar')
+def Similar():
+    mc = build_tag_container("similar")
     return mc
 
 
@@ -1270,8 +1294,8 @@ def player_string(values):
 # These functions are for stats stuff
 def build_tag_container(selection):
     headers = sort_headers(["Container-Start", "Container-Size", "Type", "Section", "Include-Meta", "Meta-Size"])
-    tag_options = ["actor", "director", "writer", "genre"]
-    meta_options = ["tags_country", "year", "contentRating", "studio", "score"]
+    tag_options = ["actor", "director", "writer", "genre", "country", "mood", "similar", "autotag", "collection"]
+    meta_options = ["year", "contentRating", "studio", "score"]
     records = []
     if selection in tag_options:
         records = query_tag_stats(selection, headers)
@@ -1355,13 +1379,33 @@ def query_tag_stats(selection, headers):
 
     tag_names = {
         "genre": 1,
+        "collection": 2,
         "director": 4,
         "writer": 5,
-        "actor": 6
+        "actor": 6,
+        "country": 8,
+        "autotag": 207,
+        "mood": 300,
+        "similar": 305
+    }
+
+    tag_ids = {
+        1: "genre",
+        2: "collection",
+        4: "director",
+        5: "writer",
+        6: "actor",
+        8: "country",
+        207: "autotag",
+        300: "mood",
+        305: "similar"
     }
 
     if selection == "all":
-        selector = "WHERE (tags.tag_type = 6 OR tags.tag_type = 5 OR tags.tag_type = 4 OR tags.tag_type = 1)"
+        stringz = []
+        for tag_name in tag_names:
+            stringz.append("tags.tag_type = %s" % tag_names[tag_name])
+        selector = "WHERE (%s)" % " OR ".join(stringz)
     else:
         if selection not in tag_names:
             return []
@@ -1399,7 +1443,7 @@ def query_tag_stats(selection, headers):
                     on mt.library_section_id = lib.id
                     %s
                     ORDER BY tags.tag_type, mt.metadata_type, library_section, tags.tag;
-                    """ % (selector)
+                    """ % selector
 
         records = {}
         Log.Debug("Query is '%s'" % query)
@@ -1407,8 +1451,8 @@ def query_tag_stats(selection, headers):
         for tag, tag_type, ratingkey, title, library_section, parent_title, \
                 grandparent_title, meta_type, added_at, year, lib_id in cursor.execute(query):
 
-            if tag_type in TAG_TYPE_ARRAY:
-                tag_title = TAG_TYPE_ARRAY[tag_type]
+            if tag_type in tag_ids:
+                tag_title = tag_ids[tag_type]
             else:
                 Log.Debug("Jesus fucking fuck.")
 
