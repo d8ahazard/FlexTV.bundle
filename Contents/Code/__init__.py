@@ -66,7 +66,6 @@ META_TYPE_NAMES = dict(map(reversed, META_TYPE_IDS.items()))
 DEFAULT_CONTAINER_SIZE = 100000
 DEFAULT_CONTAINER_START = 0
 DATE_STRUCTURE = "%Y-%m-%d %H:%M:%S"
-DATE_STRUCTURE2 = "%Y-%m-%d"
 pms_path = pms_path()
 Log.Debug("New PMS Path iss '%s'" % pms_path)
 dbPath = os.path.join(pms_path, "Plug-in Support", "Databases", "com.plexapp.plugins.library.db")
@@ -1268,7 +1267,7 @@ def player_string(values):
 
 
 ####################################
-# These functions a re for stats stuff
+# These functions are for stats stuff
 def build_tag_container(selection):
     headers = sort_headers(["Container-Start", "Container-Size", "Type", "Section", "Include-Meta", "Meta-Size"])
     tag_options = ["actor", "director", "writer", "genre"]
@@ -2028,48 +2027,9 @@ def query_library_growth(headers):
     container_size = int(headers.get("Container-Size") or DEFAULT_CONTAINER_SIZE)
     container_start = int(headers.get("Container-Start") or DEFAULT_CONTAINER_START)
     results = []
-    start_date = datetime.datetime.strftime(datetime.datetime.now(), DATE_STRUCTURE)
-    end_date = "1900-01-01 00:00:00"
-    if "Interval" in headers:
-        interval = int(headers["Interval"])
-        if "Start" in headers:
-            start_check = headers.get("Start")
-            valid = validate_date(start_check)
-            if valid:
-                Log.Debug("We have a start date, we'll use that.")
-                end_date = datetime.datetime.strftime(datetime.datetime.strptime(
-                    valid, DATE_STRUCTURE) - datetime.timedelta(days=interval), DATE_STRUCTURE)
-
-        elif "End" in headers:
-            end_check = headers.get("End")
-            valid = validate_date(end_check)
-            if valid:
-                Log.Debug("We have an end date, we'll set interval from there.")
-                start_date = datetime.datetime.strftime(datetime.datetime.strptime(
-                    valid, DATE_STRUCTURE) + datetime.timedelta(days=interval), DATE_STRUCTURE)
-
-        else:
-            Log.Debug("No start or end params, going %s days from today." % interval)
-            start_int = datetime.datetime.now()
-            start_date = datetime.datetime.now().strftime(DATE_STRUCTURE)
-            end_int = start_int - datetime.timedelta(days=interval)
-            end_date = datetime.datetime.strftime(end_int, DATE_STRUCTURE)
-            Log.Debug("start date is %s, end is %s" % (start_date, end_date))
-
-    else:
-        if "Start" in headers:
-            start_check = headers.get("Start")
-            valid = validate_date(start_check)
-            if valid:
-                Log.Debug("We have a start date, we'll use that.")
-                start_date = valid
-
-        if "End" in headers:
-            end_check = headers.get("End")
-            valid = validate_date(end_check)
-            if valid:
-                Log.Debug("We have an end date, we'll set interval from there.")
-                end_date = valid
+    interval = build_interval()
+    start_date = interval[0]
+    end_date = interval[1]
 
     Log.Debug("Okay, we should have start and end dates of %s and %s" % (start_date, end_date))
 
@@ -2155,48 +2115,9 @@ def query_library_popular():
         if meta_id:
             selector += " AND mi.metadata_type = %s" % meta_id
 
-    start_date = datetime.datetime.strftime(datetime.datetime.now(), DATE_STRUCTURE)
-    end_date = "1900-01-01 00:00:00"
-    if "Interval" in headers:
-        interval = int(headers["Interval"])
-        if "Start" in headers:
-            start_check = headers.get("Start")
-            valid = validate_date(start_check)
-            if valid:
-                Log.Debug("We have a vv start date, we'll use that.")
-                end_date = datetime.datetime.strftime(datetime.datetime.strptime(
-                    valid, DATE_STRUCTURE) - datetime.timedelta(days=interval), DATE_STRUCTURE)
-
-        elif "End" in headers:
-            end_check = headers.get("End")
-            valid = validate_date(end_check)
-            if valid:
-                Log.Debug("We have an vv end date, we'll set interval from there.")
-                start_date = datetime.datetime.strftime(datetime.datetime.strptime(
-                    valid, DATE_STRUCTURE) + datetime.timedelta(days=interval), DATE_STRUCTURE)
-
-        else:
-            Log.Debug("No start or end params, going %s days from today." % interval)
-            start_int = datetime.datetime.now()
-            start_date = datetime.datetime.now().strftime(DATE_STRUCTURE)
-            end_int = start_int - datetime.timedelta(days=interval)
-            end_date = datetime.datetime.strftime(end_int, DATE_STRUCTURE)
-            Log.Debug("start date is %s, end is %s" % (start_date, end_date))
-
-    else:
-        if "Start" in headers:
-            start_check = headers.get("Start")
-            valid = validate_date(start_check)
-            if valid:
-                Log.Debug("We have a start v2 date, we'll use that.")
-                start_date = valid
-
-        if "End" in headers:
-            end_check = headers.get("End")
-            valid = validate_date(end_check)
-            if valid:
-                Log.Debug("We have an end v2 dates, we'll set interval from there.")
-                end_date = valid
+    interval = build_interval()
+    start_date = interval[0]
+    end_date = interval[1]
 
     results = {}
     if cursor is not None:
@@ -2535,21 +2456,95 @@ def DispatchRestart():
     Thread.CreateTimer(1.0, Restart)
 
 
+def build_interval():
+    headers = sort_headers(["Start", "End", "Interval"])
+    start_date = "1900-01-01 00:00:00"
+    end_date = datetime.datetime.strftime(datetime.datetime.now(), DATE_STRUCTURE)
+    if "Interval" in headers:
+        interval = int(headers["Interval"])
+        if "Start" in headers:
+            start_check = headers.get("Start")
+            valid = validate_date(start_check)
+            if valid:
+                Log.Debug("We have a vv start date, we'll use that.")
+                end_date = datetime.datetime.strftime(datetime.datetime.strptime(
+                    valid, DATE_STRUCTURE) - datetime.timedelta(days=interval), DATE_STRUCTURE)
+
+        elif "End" in headers:
+            end_check = headers.get("End")
+            valid = validate_date(end_check)
+            if valid:
+                Log.Debug("We have an vv end date, we'll set interval from there.")
+                start_date = datetime.datetime.strftime(datetime.datetime.strptime(
+                    valid, DATE_STRUCTURE) + datetime.timedelta(days=interval), DATE_STRUCTURE)
+
+        else:
+            Log.Debug("No start or end params, going %s days from today." % interval)
+            start_int = datetime.datetime.now()
+            start_date = datetime.datetime.now().strftime(DATE_STRUCTURE)
+            end_int = start_int - datetime.timedelta(days=interval)
+            end_date = datetime.datetime.strftime(end_int, DATE_STRUCTURE)
+            Log.Debug("start date is %s, end is %s" % (start_date, end_date))
+
+    else:
+        if "Start" in headers:
+            start_check = headers.get("Start")
+            valid = validate_date(start_check)
+            if valid:
+                Log.Debug("We have a start v2 date, we'll use that.")
+                start_date = valid
+
+        if "End" in headers:
+            end_check = headers.get("End")
+            valid = validate_date(end_check)
+            if valid:
+                Log.Debug("We have an end v2 dates, we'll set interval from there.")
+                end_date = valid
+
+    return [start_date, end_date]
+
+
 def validate_date(date_text):
     valid = False
-    try:
-        datetime.datetime.strptime(date_text, DATE_STRUCTURE)
-        valid = date_text
-    except ValueError:
-        pass
+
+    full_date = str(date_text).split(" ")
+    date_list = full_date[0].split("-")
+    if len(date_list) == 3:
+        Log.Debug("Date has YMD params, we're good")
+    if len(date_list) == 2:
+        Log.Debug("Date missing day param, adding")
+        date_list.append("01")
+    if len(date_list) == 1:
+        Log.Debug("Date missing month and day, adding")
+        date_list.append("01")
+        date_list.append("01")
+    date_param = "-".join(date_list)
+
+    time_list = ["00", "00", "00"]
+    if len(full_date) == 2:
+        Log.Debug("Date appears to have a time param")
+        time_list = full_date[1].split(":")
+        if len(time_list) == 3:
+            Log.Debug("Date has full time")
+        if len(time_list) == 2:
+            Log.Debug("Date is missing hours")
+            time_list.append("00")
+        if len(time_list) == 1:
+            Log.Debug("Date has an hour param only")
+            time_list.append("00")
+            time_list.append("00")
+    time_param = ":".join(time_list)
+
+    date_check = "%s %s" % (date_param, time_param)
+    Log.Debug("Date string built to %s" % date_check)
 
     try:
-        datetime.datetime.strptime(date_text, DATE_STRUCTURE2)
-        valid = date_text + " 00:00:00"
+        datetime.datetime.strptime(date_check, DATE_STRUCTURE)
+        valid = date_check
     except ValueError:
         pass
 
     if valid is False:
-        Log.Error("Incorrect date format, should be '%s' or '%s'" % (DATE_STRUCTURE, DATE_STRUCTURE2))
+        Log.Error("Could not determine date structure for '%s" % date_text)
 
     return valid
