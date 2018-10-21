@@ -2216,7 +2216,7 @@ def query_library_popular():
             ORDER BY count desc
             LIMIT %s
             OFFSET %s;
-        """ % (selector, container_size, container_start, start_date, end_date)
+        """ % (start_date, end_date, selector, container_size, container_start)
 
         Log.Debug("Query is '%s'" % query)
 
