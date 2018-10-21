@@ -2167,8 +2167,8 @@ def query_library_popular():
     if cursor is not None:
         query = """
             SELECT DISTINCT
-                sm.library_section_id, sm.grandparent_title, sm.parent_title, sm.title, mi.id as rating_key, 
-                COUNT(mi.id) as count, mi.metadata_type
+                sm.library_section_id, sm.grandparent_title, sm.parent_title, sm.title, sm.viewed_at,
+                mi.id as rating_key, sm.account_id, mi.metadata_type
             FROM metadata_item_views as sm
             LEFT JOIN metadata_items as mi
             ON 
@@ -2176,43 +2176,70 @@ def query_library_popular():
                 AND mi.library_section_id = sm.library_section_id
                 AND mi.metadata_type = sm.metadata_type
             WHERE sm.viewed_at BETWEEN '%s' AND '%s'
-            %s                        
-            GROUP BY rating_key
-            ORDER BY count desc
+            %s
+            order by rating_key
             LIMIT %s
             OFFSET %s;
         """ % (start_date, end_date, selector, container_size, container_start)
 
         Log.Debug("Query is '%s'" % query)
-
-        for section_id, grandparent_title, parent_title, title, rating_key, count,\
+        record_dict = {}
+        for section_id, grandparent_title, parent_title, title, viewed_at, rating_key, account_id,\
                 meta_type in cursor.execute(query):
 
             if meta_type in META_TYPE_IDS:
                 meta_type = META_TYPE_IDS[meta_type]
 
-            dicts = {
-                "title": title,
-                "parentTitle": parent_title,
-                "grandparentTitle": grandparent_title,
-                "type": meta_type,
-                "ratingKey": rating_key,
-                "viewCount": count,
-                "thumb": "/library/metadata/" + str(rating_key) + "/thumb",
-                "art": "/library/metadata/" + str(rating_key) + "/art",
-            }
+            rec_count = 0
+            user_list = []
+            if str(rating_key) in record_dict:
+                dicts = record_dict[str(rating_key)]
+                rec_count = dicts['viewCount']
+                user_list = dicts['userList']
+            else:
+
+                dicts = {
+                    "title": title,
+                    "parentTitle": parent_title,
+                    "grandparentTitle": grandparent_title,
+                    "type": meta_type,
+                    "ratingKey": rating_key,
+                    "metaType": meta_type,
+                    "thumb": "/library/metadata/" + str(rating_key) + "/thumb",
+                    "art": "/library/metadata/" + str(rating_key) + "/art"
+                }
+
+            if account_id not in user_list:
+                user_list.append(account_id)
+
+            rec_count += 1
+
+            dicts["viewCount"] = rec_count
+            dicts["userList"] = user_list
+            dicts["userCount"] = len(user_list)
 
             if meta_type == "episode":
                 dicts["banner"] = "/library/metadata/" + str(rating_key) + "/banner/"
 
+            record_dict[str(rating_key)] = dicts
+
+        close_connection(connection)
+
+        meta_items = []
+        for rating_key in record_dict:
+            dicts = record_dict[rating_key]
+            meta_items.append(dicts)
+
+        meta_items = sorted(meta_items, key=lambda i: i['viewCount'], reverse=True)
+        for item in meta_items:
+            meta_type = item['metaType']
             meta_list = []
             if meta_type in results:
                 meta_list = results[meta_type]
-
-            meta_list.append(dicts)
+            del item['userList']
+            del item['metaType']
+            meta_list.append(item)
             results[meta_type] = meta_list
-
-        close_connection(connection)
 
     return results
 
