@@ -2218,7 +2218,7 @@ def query_library_popular():
             OFFSET %s;
         """ % (selector, container_size, container_start, start_date, end_date)
 
-        Log.Debug("Query is '%s'" % query
+        Log.Debug("Query is '%s'" % query)
 
         for section_id, grandparent_title, parent_title, title, rating_key, count,\
                 meta_type in cursor.execute(query):
