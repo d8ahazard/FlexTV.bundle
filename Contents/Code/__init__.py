@@ -648,10 +648,9 @@ def Score():
 def Library():
     mc = MediaContainer()
     mi = []
-    headers = sort_headers(["Container-Size", "Type"])
     Log.Debug("Here's where we fetch some library stats.")
     sections = {}
-    recs = query_library_stats(headers)
+    recs = query_library_stats()
     sizes = query_library_sizes()
     records = recs[0]
     sec_counts = recs[1]
@@ -736,12 +735,12 @@ def Library():
             section_data["watchedItems"] = sec_unique_played["viewedItems"]
         ac = AnyContainer(section_data, "Section", "False")
         bc = section_data
-        bc["Sections"] = section_children
         for child in section_children:
             if os.environ['ENC_TYPE'] != 'json':
                 ac.add(child)
 
         if os.environ['ENC_TYPE'] == 'json':
+            bc["Sections"] = section_children
             mi.append(bc)
         else:
             mc.add(ac)
@@ -1453,8 +1452,6 @@ def query_tag_stats(selection, headers):
 
             if tag_type in tag_ids:
                 tag_title = tag_ids[tag_type]
-            else:
-                Log.Debug("Jesus fucking fuck.")
 
             if meta_type in META_TYPE_IDS:
                 meta_type = META_TYPE_IDS[meta_type]
@@ -1762,7 +1759,8 @@ def query_user_stats(headers):
             Log.Debug("We have headers...")
             selector_values = {
                 "Userid": "sm.account_id",
-                "Username": "accounts.name"
+                "Username": "accounts.name",
+                "Device": "device_id"
             }
 
             for header_key, value in headers.items():
@@ -1848,8 +1846,9 @@ def query_user_stats(headers):
                         sm.title = mi.title 
                         AND mi.library_section_id = sm.library_section_id
                         AND mi.metadata_type = sm.metadata_type
-                    %s                        
-                    ORDER BY sm.viewed_at desc;""" % query_string
+                    %s
+                    AND si.library_section_id in %s                        
+                    ORDER BY sm.viewed_at desc;""" % (query_string, entitlements)
 
         Log.Debug("Query2 is '%s'" % query)
         Log.Debug("Query selectors: %s" % JSON.StringFromObject(query_params))
@@ -1942,7 +1941,7 @@ def query_user_stats(headers):
         return None
 
 
-def query_library_stats(headers):
+def query_library_stats():
     conn = fetch_cursor()
     cursor = conn[0]
     connection = conn[1]
@@ -2037,20 +2036,22 @@ def query_library_stats(headers):
                 dicts["banner"] = "/library/metadata/" + str(ratingkey) + "/banner/"
 
             results.append(dicts)
-        count_query = """SELECT mi.total_items, miv.viewed_count, mi.metadata_type, mi.library_section_id
-FROM (
-    SELECT count(metadata_type) AS total_items, metadata_type, library_section_id
-    FROM metadata_items
-    GROUP BY metadata_type, library_section_id
-) AS mi
-INNER JOIN (
-    SELECT count(metadata_type) AS viewed_count, metadata_type, library_section_id FROM (
-        SELECT DISTINCT metadata_type, library_section_id, title, thumb_url
-        FROM metadata_item_views
-    ) AS umiv
-    GROUP BY metadata_type, library_section_id
-) AS miv
-ON miv.library_section_id = mi.library_section_id AND miv.metadata_type = mi.metadata_type"""
+        count_query = """
+                        SELECT mi.total_items, miv.viewed_count, mi.metadata_type, mi.library_section_id
+                        FROM (
+                            SELECT count(metadata_type) AS total_items, metadata_type, library_section_id
+                            FROM metadata_items
+                            GROUP BY metadata_type, library_section_id
+                        ) AS mi
+                        INNER JOIN (
+                            SELECT count(metadata_type) AS viewed_count, metadata_type, library_section_id FROM (
+                                SELECT DISTINCT metadata_type, library_section_id, title, thumb_url
+                                FROM metadata_item_views
+                            ) AS umiv
+                            GROUP BY metadata_type, library_section_id
+                        ) AS miv
+                        ON miv.library_section_id = mi.library_section_id AND miv.metadata_type = mi.metadata_type;
+                        """
         sec_counts = {}
         for total_items, viewed_count, meta_type, section_id in cursor.execute(count_query):
             meta_type = META_TYPE_IDS.get(meta_type) or meta_type
@@ -2076,32 +2077,36 @@ def query_library_growth(headers):
     end_date = interval[1]
 
     Log.Debug("Okay, we should have start and end dates of %s and %s" % (start_date, end_date))
-
+    entitlements = get_entitlements()
     conn = fetch_cursor()
     cursor = conn[0]
     connection = conn[1]
     if cursor is not None:
         Log.Debug("Ready to query!")
-        query = """SELECT mi1.id, mi1.title, mi1.year, mi1.metadata_type, mi1.created_at, mi1.tags_genre AS genre, mi1.tags_country AS country, mi1.parent_id,
-                    mi2.title AS parent_title, mi2.parent_id AS grandparent_id, mi2.tags_genre AS parent_genre, mi2.tags_country AS parent_country,
-                    mi3.title AS grandparent_title, mi3.tags_genre AS grandparent_genre, mi3.tags_country AS grandparent_country
-                    FROM metadata_items AS mi1
-                    LEFT JOIN metadata_items AS mi2
-                    ON mi1.parent_id = mi2.id
-                    LEFT JOIN metadata_items AS mi3
-                    ON mi2.parent_id = mi3.id
-                    WHERE mi1.created_at BETWEEN ? AND ?
-                    AND mi1.metadata_type IN (1, 4, 10)
-                    AND mi1.title NOT IN ("", "com.plexapp.agents")
-                    ORDER BY mi1.created_at DESC;
-        """
-        params = (end_date, start_date)
-        Log.Debug("Query is '%s'" % query)
+        query = """
+            SELECT mi1.id, mi1.title, mi1.year, mi1.metadata_type, mi1.created_at, mi1.tags_genre AS genre, mi1.tags_country AS country, mi1.parent_id,
+            mi2.title AS parent_title, mi2.parent_id AS grandparent_id, mi2.tags_genre AS parent_genre, mi2.tags_country AS parent_country,
+            mi3.title AS grandparent_title, mi3.tags_genre AS grandparent_genre, mi3.tags_country AS grandparent_country, 
+            mi1.library_section_id as section
+            FROM metadata_items AS mi1
+            LEFT JOIN metadata_items AS mi2
+            ON mi1.parent_id = mi2.id
+            LEFT JOIN metadata_items AS mi3
+            ON mi2.parent_id = mi3.id
+            WHERE mi1.created_at BETWEEN ? AND ?
+            AND section in %s
+            AND mi1.metadata_type IN (1, 4, 10)
+            AND mi1.title NOT IN ("", "com.plexapp.agents")
+            ORDER BY mi1.created_at DESC;
+        """ % entitlements
+        params = (start_date, end_date)
+        Log.Debug("Query is '%s', params are '%s'" % (query, params))
         i = 0
         container_max = container_start + container_size
         for rating_key, title, year, meta_type, created_at, genres, country, \
             parent_id, parent_title, parent_genre, parent_country, \
-            grandparent_id, grandparent_title, grandparent_genre, grandparent_country in cursor.execute(query, params):
+                grandparent_id, grandparent_title, grandparent_genre, grandparent_country, section\
+                    in cursor.execute(query, params):
             if i >= container_max:
                 break
 
