@@ -1847,7 +1847,7 @@ def query_user_stats(headers):
                         AND mi.library_section_id = sm.library_section_id
                         AND mi.metadata_type = sm.metadata_type
                     %s
-                    AND si.library_section_id in %s                        
+                    AND sm.library_section_id in %s                        
                     ORDER BY sm.viewed_at desc;""" % (query_string, entitlements)
 
         Log.Debug("Query2 is '%s'" % query)
