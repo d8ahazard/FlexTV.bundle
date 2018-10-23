@@ -2169,28 +2169,30 @@ def query_library_popular():
     end_date = interval[1]
 
     results = {}
+    meta_parents = []
+    parent_counts = {}
+    id_list = []
+
     if cursor is not None:
         query = """
             SELECT DISTINCT
                 sm.library_section_id, sm.grandparent_title, sm.parent_title, sm.title, sm.viewed_at,
-                mi.id as rating_key, sm.account_id, mi.metadata_type
+                mi.id as rating_key, sm.account_id, mi.metadata_type, mi.parent_id
             FROM metadata_item_views as sm
-            LEFT JOIN metadata_items as mi
+            INNER JOIN metadata_items as mi
             ON 
                 sm.title = mi.title 
                 AND mi.library_section_id = sm.library_section_id
                 AND mi.metadata_type = sm.metadata_type
             WHERE sm.viewed_at BETWEEN '%s' AND '%s'
             %s
-            order by rating_key
-            LIMIT %s
-            OFFSET %s;
-        """ % (start_date, end_date, selector, container_size, container_start)
+            order by rating_key;
+        """ % (start_date, end_date, selector)
 
         Log.Debug("Query is '%s'" % query)
         record_dict = {}
         for section_id, grandparent_title, parent_title, title, viewed_at, rating_key, account_id,\
-                meta_type in cursor.execute(query):
+                meta_type, parent_id in cursor.execute(query):
 
             if meta_type in META_TYPE_IDS:
                 meta_type = META_TYPE_IDS[meta_type]
@@ -2206,6 +2208,7 @@ def query_library_popular():
                 dicts = {
                     "title": title,
                     "parentTitle": parent_title,
+                    "parentId": parent_id,
                     "grandparentTitle": grandparent_title,
                     "type": meta_type,
                     "ratingKey": rating_key,
@@ -2234,20 +2237,78 @@ def query_library_popular():
         for rating_key in record_dict:
             dicts = record_dict[rating_key]
             meta_items.append(dicts)
-        if sort == "User":
+        if (sort == "User") | (sort == "user"):
             param = "userCount"
         else:
             param = "viewCount"
         meta_items = sorted(meta_items, key=lambda i: i[param], reverse=True)
+
         for item in meta_items:
             meta_type = item['metaType']
             meta_list = []
             if meta_type in results:
                 meta_list = results[meta_type]
+
+            parent_type = False
+            grandparent_type = False
+            parent_id = False
+            parent_count = 0
+
+            if meta_type == "episode":
+                parent_type = "series"
+            if meta_type == "track":
+                parent_type = "album"
+                grandparent_type = "artist"
+                grandparent_title = item['grandparentTitle']
+            if (meta_type == "track") | (meta_type == "episode"):
+                parent_title = item['parentTitle']
+                parent_id = item['parentId']
+
+                parent_count = parent_counts.get(str(parent_id)) or 0
+                parent_count += 1
+                parent_counts[str(parent_id)] = parent_count
+
+                if str(parent_id) not in id_list:
+                    meta_parents.append({'title': parent_title, 'ratingKey': parent_id, 'metaType': parent_type})
+                    id_list.append(str(parent_id))
+
+            if grandparent_type is not False:
+                parent_count = parent_counts.get(grandparent_title) or 0
+                parent_count += 1
+                parent_counts[grandparent_title] = parent_count
+                if str(grandparent_title) not in id_list:
+                    meta_parents.append({'title': grandparent_title, 'metaType': grandparent_type})
+                    id_list.append(grandparent_title)
+
             del item['userList']
             del item['metaType']
             meta_list.append(item)
             results[meta_type] = meta_list
+
+    container_max = container_start + container_size
+    for meta_item in results:
+        list_item = results[meta_item]
+        if len(list_item) < container_max:
+            list_item = list_item[container_start:container_max]
+        else:
+            list_item = list_item[container_start:]
+        results[meta_item] = list_item
+
+    for parent_item in meta_parents:
+        parent_type = parent_item['metaType']
+        parent_title = parent_item['title']
+        parent_list = results.get(parent_type) or []
+        lookup_val = parent_title
+        if parent_type != 'artist':
+            rating_key = parent_item['ratingKey']
+            lookup_val = str(rating_key)
+            parent_item['thumb'] = "/library/metadata/" + str(rating_key) + "/thumb"
+            parent_item["art"] = "/library/metadata/" + str(rating_key) + "/art"
+
+        parent_item['count'] = parent_counts.get(lookup_val) or 0
+        del parent_item['metaType']
+        parent_list.append(parent_item)
+        results[parent_type] = sorted(parent_list, key=lambda i: i['count'], reverse=True)
 
     return results
 
@@ -2537,49 +2598,40 @@ def DispatchRestart():
 
 def build_interval():
     headers = sort_headers(["Start", "End", "Interval"])
-    start_date = "1900-01-01 00:00:00"
-    end_date = datetime.datetime.strftime(datetime.datetime.now(), DATE_STRUCTURE)
-    if "Interval" in headers:
-        interval = int(headers["Interval"])
-        if "Start" in headers:
-            start_check = headers.get("Start")
-            valid = validate_date(start_check)
-            if valid:
-                Log.Debug("We have a vv start date, we'll use that.")
-                end_date = datetime.datetime.strftime(datetime.datetime.strptime(
-                    valid, DATE_STRUCTURE) - datetime.timedelta(days=interval), DATE_STRUCTURE)
+    start_date = False
+    end_date = False
+    interval = headers.get('Interval') or 365
 
-        elif "End" in headers:
-            end_check = headers.get("End")
-            valid = validate_date(end_check)
-            if valid:
-                Log.Debug("We have an vv end date, we'll set interval from there.")
-                start_date = datetime.datetime.strftime(datetime.datetime.strptime(
-                    valid, DATE_STRUCTURE) + datetime.timedelta(days=interval), DATE_STRUCTURE)
+    if "End" in headers:
+        end_check = headers.get("End")
+        valid = validate_date(end_check)
+        if valid:
+            end_date = valid
 
-        else:
-            Log.Debug("No start or end params, going %s days from today." % interval)
-            start_int = datetime.datetime.now()
-            start_date = datetime.datetime.now().strftime(DATE_STRUCTURE)
-            end_int = start_int - datetime.timedelta(days=interval)
-            end_date = datetime.datetime.strftime(end_int, DATE_STRUCTURE)
-            Log.Debug("start date is %s, end is %s" % (start_date, end_date))
+    if "Start" in headers:
+        start_check = headers.get("Start")
+        valid = validate_date(start_check)
+        if valid:
+            Log.Debug("We have a vv start date, we'll use that.")
+            start_date = valid
 
-    else:
-        if "Start" in headers:
-            start_check = headers.get("Start")
-            valid = validate_date(start_check)
-            if valid:
-                Log.Debug("We have a start v2 date, we'll use that.")
-                start_date = valid
+    if start_date & end_date:
+        return [start_date, end_date]
 
-        if "End" in headers:
-            end_check = headers.get("End")
-            valid = validate_date(end_check)
-            if valid:
-                Log.Debug("We have an end v2 dates, we'll set interval from there.")
-                end_date = valid
+    if start_date:
+        end_int = datetime.datetime.now()
+        end_date = datetime.datetime.strftime(end_int, DATE_STRUCTURE)
+        return [start_date, end_date]
 
+    if end_date:
+        start_date = datetime.datetime.strftime(datetime.datetime.strptime(
+            end_date, DATE_STRUCTURE) + datetime.timedelta(days=interval), DATE_STRUCTURE)
+        return [start_date, end_date]
+
+    # Default behavior is to return 365 (or specified interval) days worth of records from today.
+    end_int = datetime.datetime.now()
+    start_int = end_int - datetime.timedelta(days=interval)
+    start_date = datetime.datetime.strftime(start_int, DATE_STRUCTURE)
     return [start_date, end_date]
 
 
