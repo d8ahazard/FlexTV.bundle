@@ -2171,6 +2171,7 @@ def query_library_popular():
     results = {}
     meta_parents = []
     parent_counts = {}
+    parent_user_counts = {}
     id_list = []
 
     if cursor is not None:
@@ -2245,28 +2246,28 @@ def query_library_popular():
 
         for item in meta_items:
             meta_type = item['metaType']
+            user_count = item['userCount']
             meta_list = []
             if meta_type in results:
                 meta_list = results[meta_type]
 
-            parent_type = False
             grandparent_type = False
-            parent_id = False
-            parent_count = 0
 
             if meta_type == "episode":
-                parent_type = "series"
+                grandparent_type = "series"
+                grandparent_title = item['grandparentTitle']
             if meta_type == "track":
+                parent_title = item['parentTitle']
                 parent_type = "album"
                 grandparent_type = "artist"
                 grandparent_title = item['grandparentTitle']
-            if (meta_type == "track") | (meta_type == "episode"):
-                parent_title = item['parentTitle']
-                parent_id = item['parentId']
-
                 parent_count = parent_counts.get(str(parent_id)) or 0
                 parent_count += 1
                 parent_counts[str(parent_id)] = parent_count
+
+                user_total = parent_user_counts.get(str(parent_id)) or 0
+                user_total += user_count
+                parent_user_counts[str(parent_id)] = user_total
 
                 if str(parent_id) not in id_list:
                     meta_parents.append({'title': parent_title, 'ratingKey': parent_id, 'metaType': parent_type})
@@ -2276,6 +2277,10 @@ def query_library_popular():
                 parent_count = parent_counts.get(grandparent_title) or 0
                 parent_count += 1
                 parent_counts[grandparent_title] = parent_count
+                user_total = parent_user_counts.get(grandparent_title) or 0
+                user_total += user_count
+                parent_user_counts[grandparent_title] = user_total
+
                 if str(grandparent_title) not in id_list:
                     meta_parents.append({'title': grandparent_title, 'metaType': grandparent_type})
                     id_list.append(grandparent_title)
@@ -2299,13 +2304,14 @@ def query_library_popular():
         parent_title = parent_item['title']
         parent_list = results.get(parent_type) or []
         lookup_val = parent_title
-        if parent_type != 'artist':
+        if parent_type == 'album':
             rating_key = parent_item['ratingKey']
             lookup_val = str(rating_key)
             parent_item['thumb'] = "/library/metadata/" + str(rating_key) + "/thumb"
             parent_item["art"] = "/library/metadata/" + str(rating_key) + "/art"
 
         parent_item['count'] = parent_counts.get(lookup_val) or 0
+        parent_item['userCount'] = parent_user_counts.get(lookup_val) or 0
         del parent_item['metaType']
         parent_list.append(parent_item)
         results[parent_type] = sorted(parent_list, key=lambda i: i['count'], reverse=True)
