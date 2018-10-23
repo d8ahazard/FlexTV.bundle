@@ -2258,6 +2258,7 @@ def query_library_popular():
                 grandparent_title = item['grandparentTitle']
             if meta_type == "track":
                 parent_title = item['parentTitle']
+                parent_id = item['parentId']
                 parent_type = "album"
                 grandparent_type = "artist"
                 grandparent_title = item['grandparentTitle']
@@ -2290,15 +2291,6 @@ def query_library_popular():
             meta_list.append(item)
             results[meta_type] = meta_list
 
-    container_max = container_start + container_size
-    for meta_item in results:
-        list_item = results[meta_item]
-        if len(list_item) < container_max:
-            list_item = list_item[container_start:container_max]
-        else:
-            list_item = list_item[container_start:]
-        results[meta_item] = list_item
-
     for parent_item in meta_parents:
         parent_type = parent_item['metaType']
         parent_title = parent_item['title']
@@ -2310,11 +2302,24 @@ def query_library_popular():
             parent_item['thumb'] = "/library/metadata/" + str(rating_key) + "/thumb"
             parent_item["art"] = "/library/metadata/" + str(rating_key) + "/art"
 
-        parent_item['count'] = parent_counts.get(lookup_val) or 0
+        parent_item['viewCount'] = parent_counts.get(lookup_val) or 0
         parent_item['userCount'] = parent_user_counts.get(lookup_val) or 0
         del parent_item['metaType']
         parent_list.append(parent_item)
-        results[parent_type] = sorted(parent_list, key=lambda i: i['count'], reverse=True)
+        if (sort == "User") | (sort == "user"):
+            param = "userCount"
+        else:
+            param = "viewCount"
+            results[parent_type] = sorted(parent_list, key=lambda i: i[param], reverse=True)
+
+    container_max = container_start + container_size
+    for meta_item in results:
+        list_item = results[meta_item]
+        if len(list_item) < container_max:
+            list_item = list_item[container_start:container_max]
+        else:
+            list_item = list_item[container_start:]
+        results[meta_item] = list_item
 
     return results
 
