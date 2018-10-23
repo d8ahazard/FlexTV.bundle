@@ -120,8 +120,7 @@ def Start():
     RestartTimer()
 
 
-def CacheTimer():
-    mins = 60
+def CacheTimer(mins=60):
     update_time = mins * 60
     Log.Debug("Cache timer started, updating in %s minutes, man", mins)
     threading.Timer(update_time, CacheTimer).start()
@@ -137,6 +136,22 @@ def RestartTimer():
 
 def UpdateCache():
     Log.Debug("UpdateCache called")
+    # if Data.Exists('last_cache'):
+    #     Log.Debug("Checking time interval...")
+    #     last_scan = Data.Load('last_cache')
+    #     last_int = int(datetime.datetime.strptime(last_scan, DATE_STRUCTURE))
+    #     now = int(time.time())
+    #     if now > last_int:
+    #         date_diff = (now+last_int).days
+    #         date_diff = date_diff * 24 * 60
+    #         Log.Debug("Scanning devices, it's been %s since our last scan." % date_diff)
+    #         scan_devices()
+    #     else:
+    #         date_diff = now - last_int
+    #         date_diff = date_diff.seconds / 60
+    #         Log.Debug("Device scan set for %s from now." % date_diff)
+    #
+    # else:
     scan_devices()
 
 
@@ -151,8 +166,8 @@ def MainMenu(Rescanned=False):
     """
     Log.Debug("**********  Starting MainMenu  **********")
     title = NAME + " - " + VERSION
-    if Data.Exists('last_scan'):
-        title = NAME + " - " + Data.Load('last_scan')
+    if Data.Exists('last_cache'):
+        title = NAME + " - " + Data.Load('last_cache')
 
     oc = ObjectContainer(
         title1=title,
@@ -829,7 +844,6 @@ def Growth():
 
 @route(STAT_PREFIX + '/library/popular')
 def Popular():
-    headers = sort_headers(["foo"])
     results = query_library_popular()
     if os.environ['ENC_TYPE'] == 'json':
         Log.Debug("RETURNING JSON")
@@ -867,8 +881,12 @@ def User():
                 del user['devices']
                 uc = FlexContainer("User", user, False)
                 sc = FlexContainer("Views")
-                for meta in user_meta:
-                    vc = FlexContainer("View", meta)
+                for meta, items in user_meta.items():
+                    vc = FlexContainer(meta)
+                    for item in items:
+                        ic = FlexContainer("Meta", item)
+                        vc.add(ic)
+
                     sc.add(vc)
                 uc.add(sc)
                 chrome_data = None
@@ -1210,8 +1228,8 @@ def scan_devices():
     Log.Debug("Item count is " + str(len(data_array)))
     cast_string = JSON.StringFromObject(data_array)
     Data.Save('device_json', cast_string)
-    last_scan = "Last Scan: " + time.strftime("%B %d %Y - %H:%M")
-    Data.Save('last_scan', last_scan)
+    last_cache = time.strftime(DATE_STRUCTURE)
+    Data.Save('last_cache', last_cache)
     return data_array
 
 
@@ -1718,7 +1736,7 @@ def query_meta_stats(selection, headers):
 
 def query_user_stats():
     headers = sort_headers(["Type", "Userid", "Username", "Container-Start", "Container-Size", "Devicename",
-                            "Deviceid", "Title"])
+                            "Deviceid", "Title", "Start", "End", "Interval"])
 
     entitlements = get_entitlements()
     user_name_selector = headers.get("Username") or False
@@ -1747,6 +1765,11 @@ def query_user_stats():
     if device_id_selector:
         query_string += " AND device_id='%s'" % user_name_selector
 
+    interval = build_interval()
+    start_date = interval[0]
+    end_date = interval[1]
+    query_string += " AND sm.at between ? AND ?"
+
     conn = fetch_cursor()
     cursor = conn[0]
     connection = conn[1]
@@ -1765,12 +1788,13 @@ def query_user_stats():
                     %s
                     ORDER BY sm.at DESC;
                     """ % query_string
-
-        Log.Debug("Media stats/device query is '%s'" % byte_query)
+        params = (start_date, end_date)
+        Log.Debug("Media stats/device query is '%s', params are %s" % (byte_query, params))
         user_results = {}
         user_dates = {}
+        meta_count = 0
         for user_name, viewed_at, meta_type, user_id, device_name, device_id, data_bytes in cursor.execute(
-                byte_query):
+                byte_query, params):
             if user_name not in user_results:
                 user_results[user_name] = {}
             user_dict = user_results.get(user_name)
@@ -1783,8 +1807,8 @@ def query_user_stats():
 
             if last_viewed > last_active:
                 last_active = last_viewed
+
             user_dates[user_name] = last_active
-            viewed_at = datetime.datetime.fromtimestamp(last_active)
 
             dicts = {
                 "userId": user_id,
@@ -1796,11 +1820,12 @@ def query_user_stats():
                 "bytes": data_bytes
             }
 
+            meta_count += 1
             item_list.append(dicts)
             user_results[user_name][meta_type] = item_list
             user_results[user_name]['lastSeen'] = last_active
 
-        Log.Debug("Done sorting media stats/device query records.")
+        Log.Debug("Query results sorted, found %s records." % meta_count)
 
         query_string = "WHERE sm.metadata_type IN %s" % type_selector
         if user_name_selector:
@@ -1816,6 +1841,7 @@ def query_user_stats():
             query_string += " AND device_id='%s'" % user_name_selector
 
         query_string += " AND sm.library_section_id in %s" % entitlements
+        query_string += " AND sm.viewed_at BETWEEN ? AND ?"
 
         query = """
             SELECT sm.account_id as user_id, sm.library_section_id, sm.grandparent_title,
@@ -1834,11 +1860,13 @@ def query_user_stats():
             ORDER BY sm.viewed_at desc;
             """ % query_string
 
-        Log.Debug("Meta query is '%s'" % query)
+        params = (start_date, end_date)
+        Log.Debug("Meta query is '%s', params are %s" % (query, params))
 
         view_results = {}
+        meta_count = 0
         for user_id, library_section, grandparent_title, parent_title, title, rating_key, genre, country, year, \
-                viewed_at, meta_type, user_name in cursor.execute(query):
+                viewed_at, meta_type, user_name in cursor.execute(query, params):
             meta_type = META_TYPE_IDS.get(meta_type) or meta_type
             last_viewed = int(time.mktime(datetime.datetime.strptime(viewed_at, "%Y-%m-%d %H:%M:%S").timetuple()))
 
@@ -1864,11 +1892,13 @@ def query_user_stats():
 
             if meta_type == "episode":
                 dicts["banner"] = "/library/metadata/" + str(rating_key) + "/banner/"
+
+            meta_count += 1
             view_meta_list.append(dicts)
             user_dict[meta_type] = view_meta_list
             view_results[user_name] = user_dict
 
-        Log.Debug("Meta query completed")
+        Log.Debug("Meta query completed, %s records retrieved." % meta_count)
 
         query3 = """
                     SELECT SUM(sb.bytes), sb.account_id AS user_id, devices.identifier, accounts.name AS user_name,
@@ -1903,15 +1933,15 @@ def query_user_stats():
         output = []
         container_start = headers.get("Container-Start") or DEFAULT_CONTAINER_START
         container_size = headers.get("Container-Size") or DEFAULT_CONTAINER_SIZE
-        container_max = container_start + container_size
-        Log.Debug("Container starts stop max are %s and %s and %s" % (container_start, container_size, container_max))
+        Log.Debug("Container starts size are %s and %s" % (container_start, container_size))
         for record_user, type_dict in view_results.items():
             user_id = False
-            user_meta_results = []
+            user_meta_results = {}
             user_dict = user_results.get(record_user) or {}
             device_list = device_results.get(record_user) or []
             last_seen = user_dict.get('lastSeen') or "NEVER"
             for meta_type, meta in type_dict.items():
+                meta_list = user_meta_results.get(meta_type) or []
                 for meta_record in meta:
                     user_meta_list = user_dict.get(meta_type) or []
                     record_date = str(meta_record["lastViewedAt"])[:6]
@@ -1923,22 +1953,17 @@ def query_user_stats():
                     user_id = meta_record['userId']
                     del meta_record['userName']
                     del meta_record['userId']
-                    user_meta_results.append(meta_record)
-            user_meta_results = sorted(user_meta_results, key=lambda i: i['lastViewedAt'], reverse=True)
+                    meta_record['lastViewedAt'] = datetime.datetime.fromtimestamp(meta_record['lastViewedAt']).strftime(DATE_STRUCTURE)
+                    meta_list.append(meta_record)
+                meta_list = sorted(meta_list, key=lambda i: i['lastViewedAt'], reverse=True)
+                user_meta_results[meta_type] = meta_list
             device_list = sorted(device_list, key=lambda i: i['totalBytes'], reverse=True)
 
-            if len(user_meta_results) < container_max:
-                user_meta_results = user_meta_results[container_start:container_max]
-
-            elif len(user_meta_results) > container_start:
-                user_meta_results = user_meta_results[container_start:]
-
-            if len(device_list) < container_max:
-                device_list = device_list[container_start:container_max]
-
-            elif len(device_list) > container_start:
-                device_list = device_list[container_start:]
-
+            device_list = device_list[container_start:container_size]
+            for meta_type, truncate in user_meta_results.items():
+                truncate = truncate[container_start:container_size]
+                user_meta_results[meta_type] = truncate
+            last_seen = datetime.datetime.fromtimestamp(last_seen).strftime("%Y-%m-%d")
             user_record = {
                 "meta": user_meta_results,
                 "devices": device_list,
@@ -2503,7 +2528,7 @@ def get_entitlements():
     allowed_keys = []
 
     for key, value in Request.Headers.items():
-        Log.Debug("Header key %s is %s", key, value)
+        Log.Debug("Headers key %s is %s", key, value)
         if key in ("X-Plex-Token", "Token"):
             Log.Debug("We have a Token")
             token = value
@@ -2552,30 +2577,30 @@ def get_time_difference(time_start, time_end):
 
 def sort_headers(header_list, strict=False):
     returns = {}
+    os.environ['ENC_TYPE'] = "xml"
     for key, value in Request.Headers.items():
-        Log.Debug("Header key %s is %s", key, value)
-        if key == "Accept":
-            if value == "application/json":
-                os.environ['ENC_TYPE'] = "json"
-            else:
-                os.environ['ENC_TYPE'] = "xml"
 
         for item in header_list:
             if key in ("X-Plex-" + item, item):
-                Log.Debug("We have a " + item)
                 value = unicode(value)
-                is_int = False
                 try:
                     test = int(value)
-                    is_int = True
                 except ValueError:
-                    Log.Debug("Value is not a string")
+                    Log.Debug("Value is not a string.")
                     pass
                 else:
                     value = test
+                Log.Debug("Value for %s is '%s'" % (item, value))
 
                 returns[item] = value
                 header_list.remove(item)
+
+    for key, value in returns.items():
+        if key == "Accept":
+            if (value == "application/json") | (value == "json"):
+                os.environ['ENC_TYPE'] = "json"
+            else:
+                os.environ['ENC_TYPE'] = "xml"
 
     if strict:
         len2 = len(header_list)
@@ -2625,7 +2650,7 @@ def build_interval():
     headers = sort_headers(["Start", "End", "Interval"])
     start_date = False
     end_date = False
-    interval = headers.get('Interval') or 365
+    interval = False
 
     if "End" in headers:
         end_check = headers.get("End")
@@ -2640,24 +2665,34 @@ def build_interval():
             Log.Debug("We have a vv start date, we'll use that.")
             start_date = valid
 
+    if "Interval" in headers:
+        int_check = headers.get("Interval")
+        if int(int_check) == int_check:
+            interval = int_check
+
     if start_date & end_date:
         return [start_date, end_date]
 
-    if start_date:
-        end_int = datetime.datetime.now()
-        end_date = datetime.datetime.strftime(end_int, DATE_STRUCTURE)
+    if start_date & interval:
+        start_date = datetime.datetime.strftime(datetime.datetime.strptime(
+            start_date, DATE_STRUCTURE) + datetime.timedelta(days=interval), DATE_STRUCTURE)
         return [start_date, end_date]
 
-    if end_date:
+    if end_date & interval:
         start_date = datetime.datetime.strftime(datetime.datetime.strptime(
-            end_date, DATE_STRUCTURE) + datetime.timedelta(days=interval), DATE_STRUCTURE)
+            end_date, DATE_STRUCTURE) - datetime.timedelta(days=interval), DATE_STRUCTURE)
         return [start_date, end_date]
 
     # Default behavior is to return 365 (or specified interval) days worth of records from today.
+    Log.Debug("Returning default interval")
+    if interval is False:
+        interval = 365
     end_int = datetime.datetime.now()
     start_int = end_int - datetime.timedelta(days=interval)
     start_date = datetime.datetime.strftime(start_int, DATE_STRUCTURE)
+    end_date = datetime.datetime.strftime(end_int, DATE_STRUCTURE)
     return [start_date, end_date]
+
 
 
 def validate_date(date_text):
