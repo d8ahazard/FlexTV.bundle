@@ -874,7 +874,10 @@ def User():
                 uc = FlexContainer("User", {"userName": user}, False)
                 sc = FlexContainer("Views")
                 i = 0
+                user_id = False
                 for record in records:
+                    user_id = record['userId']
+                    del record['userId']
                     viewed_at = datetime.datetime.fromtimestamp(record["lastViewedAt"])
                     if viewed_at > last_active:
                         last_active = viewed_at
@@ -888,24 +891,28 @@ def User():
                         sc.add(vc)
                 uc.add(sc)
                 uc.set("lastSeen", last_active)
+                uc.set('userId', user_id)
                 dp = FlexContainer("Devices", None, False)
                 chrome_data = None
+                Log.Debug("Devices for %s: %s" % (user, JSON.StringFromObject(devices)))
                 if user in devices:
+                    Log.Debug("User has items: %s" % JSON.StringFromObject(devices[user]))
                     for device in devices[user]:
-                        if device["deviceName"] in device_names:
-                            if device["deviceName"] != "Chrome":
-                                Log.Debug("Found a device for %s" % user)
-                                dc = FlexContainer("Device", device)
-                                dp.add(dc)
+                        del device['userName']
+                        del device['userId']
+                        if device["deviceName"] != "Chrome":
+                            Log.Debug("Found a device for %s" % user)
+                            dc = FlexContainer("Device", device, False)
+                            dp.add(dc)
+                        else:
+                            chrome_bytes = 0
+                            if chrome_data is None:
+                                chrome_data = device
                             else:
-                                chrome_bytes = 0
-                                if chrome_data is None:
-                                    chrome_data = device
-                                else:
-                                    chrome_bytes = device["totalBytes"] + chrome_data.get("totalBytes") or 0
-                                chrome_data["totalBytes"] = chrome_bytes
+                                chrome_bytes = device["totalBytes"] + chrome_data.get("totalBytes") or 0
+                            chrome_data["totalBytes"] = chrome_bytes
                 if chrome_data is not None:
-                    dc = FlexContainer("Device", chrome_data)
+                    dc = FlexContainer("Device", chrome_data, False)
                     dp.add(dc)
                 uc.add(dp)
                 mc.add(uc)
@@ -1895,16 +1902,14 @@ def query_user_stats(headers):
                     ON accounts.id = account_id
                     INNER JOIN devices
                     ON devices.id = device_id
-                    GROUP BY account_id, device_id
+                    GROUP BY account_id, device_id;
                     """
 
         Log.Debug("Executing query 3 '%s'" % query3)
 
         device_results = {}
         for total_bytes, account_id, device_id, account_name, device_name, machine_identifier in cursor.execute(query3):
-            user_array = []
-            if account_name in device_results:
-                user_array = device_results[account_name]
+            user_array = device_results.get(account_name) or []
 
             device_dict = {
                 "userId": account_id,
@@ -1924,7 +1929,6 @@ def query_user_stats(headers):
             for data in datas:
                 record_date = str(data["lastViewedAt"])[:6]
                 record_type = data["type"]
-
                 if record_user in results2:
                     if record_type in results2[record_user]:
                         for check in results2[record_user][record_type]:
@@ -1932,7 +1936,7 @@ def query_user_stats(headers):
                             if check_date == record_date:
                                 for value in ["deviceName", "deviceId", "bytes"]:
                                     data[value] = check[value]
-
+                del data['userName']
                 user_array.append(data)
             output[record_user] = user_array
         return [output, device_results]
