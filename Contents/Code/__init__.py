@@ -2181,11 +2181,11 @@ def query_library_popular():
     connection = conn[1]
     Log.Debug("Querying most popular media")
     entitlements = get_entitlements()
-    selector = "AND mi.library_section_id IN %s AND sm.title != ''" % entitlements
+    selector = "AND miv.library_section_id IN %s" % entitlements
     sort = headers.get("Sort") or "Total"
     section = headers.get("Section") or False
     if section:
-        selector += " AND mi.library_section_id = %s" % section
+        selector += " AND miv.library_section_id = %s" % section
 
     meta_type = headers.get("Type") or False
 
@@ -2209,20 +2209,39 @@ def query_library_popular():
 
     if cursor is not None:
         query = """
-            SELECT
-                sm.library_section_id, sm.grandparent_title, sm.parent_title, sm.title, sm.viewed_at,
-                mi.id as rating_key, sm.account_id, accounts.name, mi.metadata_type, mi.parent_id
-            FROM metadata_item_views as sm
-            INNER JOIN accounts
-                ON accounts.id = sm.account_id
-            INNER JOIN metadata_items as mi
-                ON 
-                sm.title = mi.title 
-                AND mi.library_section_id = sm.library_section_id
-                AND mi.metadata_type = sm.metadata_type
-            WHERE sm.viewed_at BETWEEN '%s' AND '%s'
-            %s
-            order by rating_key;
+            SELECT 
+            d1.library_section_id, d1.grandparent_title, d1.parent_title, d1.title, d1.viewed_at,
+                        d1.rating_key, d1.account_id, d1.user_name, d1.metadata_type, d1.parent_id 
+            from (            
+               SELECT
+                    substr(miv.viewed_at, 1, 13) AS date_check,
+                    miv.library_section_id, miv.grandparent_title, miv.parent_title, miv.title, miv.viewed_at,
+                    mi.id as rating_key, miv.account_id, accounts.name as user_name, mi.metadata_type, mi.parent_id
+                FROM metadata_item_views as miv
+                INNER JOIN accounts
+                    ON accounts.id = miv.account_id
+                INNER JOIN metadata_items as mi
+                    ON 
+                    miv.title = mi.title 
+                    AND mi.library_section_id = miv.library_section_id
+                    AND mi.metadata_type = miv.metadata_type
+                    WHERE miv.viewed_at BETWEEN '%s' AND '%s'
+                    %s                    
+            ) as d1
+            INNER JOIN (
+                SELECT sm.account_id, sm.device_id, sm.metadata_type, sm.at as viewed_at, substr(sm.at, 1, 13) AS date_check, sm.timespan
+                FROM statistics_media as sm
+                INNER JOIN statistics_bandwidth as sb
+                    ON
+                    sb.account_id = sm.account_id AND                        
+                    sb.device_id = sm.device_id AND
+                    sb.at = sm.at AND
+                    sb.timespan = sm.timespan
+            ) as d2
+            ON 
+            d1.date_check = d2.date_check AND
+            d1.account_id = d2.account_id AND
+            d1.metadata_type = d2.metadata_type;
         """ % (start_date, end_date, selector)
 
         Log.Debug("Query is '%s'" % query)
@@ -2356,12 +2375,14 @@ def query_library_popular():
 
     for meta_item in results:
         list_item = results[meta_item]
-        sort_reverse = param != "title"
-        list_item = sorted(list_item, key=lambda i: i[param], reverse=sort_reverse)
-        if len(list_item) < container_max:
-            list_item = list_item[container_start:container_max]
+        if param == "userCount":
+            list_item = sorted(list_item, key=lambda i: i['userCount'], reverse=True)
+        elif param == "viewCount":
+            list_item = sorted(list_item, key=lambda i: i['viewCount'], reverse=True)
         else:
-            list_item = list_item[container_start:]
+            list_item = sorted(list_item, key=lambda i: i['title'], reverse=False)
+
+        list_item = list_item[container_start:container_size]
         sort_param_count = {}
         resort = True
         for item in list_item:
