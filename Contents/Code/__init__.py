@@ -121,7 +121,7 @@ def Start():
     RestartTimer()
 
 
-def CacheTimer(mins=60):
+def CacheTimer(mins=10):
     update_time = mins * 60
     Log.Debug("Cache timer started, updating in %s minutes, man", mins)
     threading.Timer(update_time, CacheTimer).start()
@@ -137,23 +137,26 @@ def RestartTimer():
 
 def UpdateCache():
     Log.Debug("UpdateCache called")
-    # if Data.Exists('last_cache'):
-    #     Log.Debug("Checking time interval...")
-    #     last_scan = Data.Load('last_cache')
-    #     last_int = int(datetime.datetime.strptime(last_scan, DATE_STRUCTURE))
-    #     now = int(time.time())
-    #     if now > last_int:
-    #         date_diff = (now+last_int).days
-    #         date_diff = date_diff * 24 * 60
-    #         Log.Debug("Scanning devices, it's been %s since our last scan." % date_diff)
-    #         scan_devices()
-    #     else:
-    #         date_diff = now - last_int
-    #         date_diff = date_diff.seconds / 60
-    #         Log.Debug("Device scan set for %s from now." % date_diff)
-    #
-    # else:
-    scan_devices()
+    if Data.Exists('last_cache'):
+        last_scan = float(Data.Load('last_cache'))
+        now = float(time.time())
+        if now > last_scan:
+            time_diff = now - last_scan
+            time_mins = time_diff / 60
+            if time_mins > 10:
+                Log.Debug("Scanning devices, it's been %s minutes since our last scan." % time_mins)
+                scan_devices()
+            else:
+                Log.Debug("Devices will be re-cached in %s minutes" % round(10 - time_mins))
+        else:
+            time_diff = last_scan - now
+            time_mins = 10 - round(time_diff / 60)
+            Log.Debug("Device scan set for %s minutes from now." % time_mins)
+
+        Log.Debug("Diffs are %s and %s and %s." % (last_scan, now, time_diff))
+
+    else:
+        scan_devices()
 
 
 @handler(APP_PREFIX, NAME)
@@ -168,7 +171,10 @@ def MainMenu(Rescanned=False):
     Log.Debug("**********  Starting MainMenu  **********")
     title = NAME + " - " + VERSION
     if Data.Exists('last_cache'):
-        title = NAME + " - " + Data.Load('last_cache')
+        last_cache = Data.Load('last_cache')
+        last_cache = float(last_cache)
+        time_string = datetime.datetime.fromtimestamp(last_cache).strftime(DATE_STRUCTURE)
+        title = "%s - %s - Last Scan: %s" % (NAME, VERSION, time_string)
 
     oc = ObjectContainer(
         title1=title,
@@ -1206,31 +1212,10 @@ def scan_devices():
         data_array.append(cast_item)
 
     Log.Debug("Cast length is %s", str(len(data_array)))
-    # if len(data_array) == 0:
-    #     if Data.Exists('restarts') is not True:
-    #         Data.Save('restarts', 1)
-    #         Log.Debug("No cast devices found, we need to restart the plugin.")
-    #         DispatchRestart()
-    #     else:
-    #         restart_count = Data.Load('restarts')
-    #         if restart_count >= 5:
-    #             Log.Debug("It's been an hour, trying to restart the plugin again")
-    #             Data.Remove('restarts')
-    #             DispatchRestart()
-    #         else:
-    #             Log.Debug("Avoiding a restart in case it's not me, but you.")
-    #             restart_count += 1
-    #             Data.Save('restarts', restart_count)
-    #
-    # else:
-    #     Log.Debug("Okay, we have cast devices, no need to get all postal up in this mutha...")
-    #     if Data.Exists('restarts'):
-    #         Data.Remove('restarts')
-
     Log.Debug("Item count is " + str(len(data_array)))
     cast_string = JSON.StringFromObject(data_array)
     Data.Save('device_json', cast_string)
-    last_cache = time.strftime(DATE_STRUCTURE)
+    last_cache = float(time.time())
     Data.Save('last_cache', last_cache)
     return data_array
 
@@ -2235,17 +2220,17 @@ def query_library_popular():
         Log.Debug("Query is '%s'" % query)
         record_dict = {}
         for section_id, grandparent_title, parent_title, title, viewed_at, rating_key, account_id, \
-            meta_type, parent_id in cursor.execute(query):
+                meta_type, parent_id in cursor.execute(query):
 
             if meta_type in META_TYPE_IDS:
                 meta_type = META_TYPE_IDS[meta_type]
 
             rec_count = 0
-            user_list = []
+            user_dict = {}
             if str(rating_key) in record_dict:
                 dicts = record_dict[str(rating_key)]
                 rec_count = dicts['viewCount']
-                user_list = dicts['userList']
+                user_dict = dicts['userList']
             else:
 
                 dicts = {
@@ -2259,14 +2244,15 @@ def query_library_popular():
                     "art": "/library/metadata/" + str(rating_key) + "/art"
                 }
 
-            if account_id not in user_list:
-                user_list.append(account_id)
+            if str(account_id) not in user_dict:
+                Log.Debug("Appending user ID %s" % account_id)
+                user_dict[str(account_id)] = 1
 
             rec_count += 1
 
             dicts["viewCount"] = rec_count
-            dicts["userList"] = user_list
-            dicts["userCount"] = len(user_list)
+            dicts["userList"] = user_dict
+            dicts["userCount"] = len(user_dict)
 
             if meta_type == "episode":
                 dicts["banner"] = "/library/metadata/" + str(rating_key) + "/banner/"
@@ -2308,7 +2294,8 @@ def query_library_popular():
                 parent_counts[str(parent_id)] = parent_count
 
                 user_total = parent_user_counts.get(str(parent_id)) or 0
-                user_total += user_count
+                if user_count > user_total:
+                    user_total = user_count
                 parent_user_counts[str(parent_id)] = user_total
 
                 if str(parent_id) not in id_list:
@@ -2320,7 +2307,8 @@ def query_library_popular():
                 parent_count += 1
                 parent_counts[grandparent_title] = parent_count
                 user_total = parent_user_counts.get(grandparent_title) or 0
-                user_total += user_count
+                if user_count > user_total:
+                    user_total = user_count
                 parent_user_counts[grandparent_title] = user_total
 
                 if str(grandparent_title) not in id_list:
