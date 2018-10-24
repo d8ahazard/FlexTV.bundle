@@ -2334,7 +2334,7 @@ def query_library_popular():
     container_max = container_start + container_size
     for meta_item in results:
         list_item = results[meta_item]
-        sort_keys = ["title", "ratingKey", "userCount", "viewCount"]
+        sort_keys = ["title", "userCount", "viewCount"]
         if sort in sort_keys:
             param = sort
         else:
