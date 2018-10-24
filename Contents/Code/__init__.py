@@ -95,6 +95,7 @@ ICON_CAST_REFRESH = 'icon-cast_refresh.png'
 ICON_PLEX_CLIENT = 'icon-plex_client.png'
 TEST_CLIP = 'test.mp3'
 PLUGIN_IDENTIFIER = "com.plexapp.plugins.FlexTV"
+os.environ['ENC_TYPE'] = 'xml'
 
 
 # Start function
@@ -665,6 +666,7 @@ def Library():
     sections = {}
     recs = query_library_stats()
     sizes = query_library_sizes()
+    enc_type = os.environ.get("ENC_TYPE") or "xml"
     records = recs[0]
     sec_counts = recs[1]
     for record in records:
@@ -720,10 +722,10 @@ def Library():
                 }
                 li = AnyContainer(last_item, "lastViewed", False)
                 vc.add(li)
-                if os.environ['ENC_TYPE'] == 'json':
+                if enc_type == 'json':
                     jc[item_type]['lastItem'] = last_item
 
-            if os.environ['ENC_TYPE'] == 'json':
+            if enc_type == 'json':
                 section_children.append(jc)
             else:
                 section_children.append(vc)
@@ -749,16 +751,16 @@ def Library():
         ac = AnyContainer(section_data, "Section", "False")
         bc = section_data
         for child in section_children:
-            if os.environ['ENC_TYPE'] != 'json':
+            if enc_type != 'json':
                 ac.add(child)
 
-        if os.environ['ENC_TYPE'] == 'json':
-            bc["Sections"] = section_children
-            mi.append(bc)
+            if enc_type == 'json':
+                bc["Sections"] = section_children
+                mi.append(bc)
         else:
             mc.add(ac)
 
-    if os.environ['ENC_TYPE'] == 'json':
+    if enc_type == 'json':
         return JsonContainer(mi)
     else:
         return mc
@@ -845,7 +847,7 @@ def Growth():
 @route(STAT_PREFIX + '/library/popular')
 def Popular():
     results = query_library_popular()
-    if os.environ['ENC_TYPE'] == 'json':
+    if (os.environ.get('ENC_TYPE') or 'xml') == 'json':
         Log.Debug("RETURNING JSON")
         mc = JsonContainer(results)
 
@@ -866,7 +868,7 @@ def Popular():
 def User():
     users = query_user_stats()
 
-    if os.environ['ENC_TYPE'] == 'json':
+    if (os.environ.get('ENC_TYPE') or 'xml') == 'json':
         Log.Debug("Returning JSON data")
         return JsonContainer(users)
 
@@ -1306,7 +1308,7 @@ def build_tag_container(selection):
         records += records2
 
     Log.Debug("We have a total of %s records to process" % len(records))
-    if os.environ['ENC_TYPE'] == 'json':
+    if (os.environ.get('ENC_TYPE') or 'xml') == 'json':
         return JsonContainer(records)
     else:
         out = MediaContainer()
