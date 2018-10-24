@@ -2213,14 +2213,12 @@ def query_library_popular():
                 sm.library_section_id, sm.grandparent_title, sm.parent_title, sm.title, sm.viewed_at,
                 mi.id as rating_key, sm.account_id, accounts.name, mi.metadata_type, mi.parent_id
             FROM metadata_item_views as sm
-            INNER JOIN accounts
-                ON accounts.id = sm.account_id
             INNER JOIN metadata_items as mi
                 ON 
-                sm.title = mi.title 
-                AND mi.library_section_id = sm.library_section_id
-                AND mi.metadata_type = sm.metadata_type
-            WHERE sm.viewed_at BETWEEN '%s' AND '%s'
+                mi.guid = sm.guid
+            INNER JOIN accounts
+                ON accounts.id = sm.account_id
+                WHERE sm.viewed_at BETWEEN '%s' AND '%s'
             %s
             order by rating_key;
         """ % (start_date, end_date, selector)
@@ -2346,15 +2344,16 @@ def query_library_popular():
         results[parent_type] = parent_list
 
     container_max = container_start + container_size
-    sort_keys = ["userCount", "viewCount", "title"]
-    if sort in sort_keys:
-        param = sort
-    else:
-        param = "userCount"
 
-    Log.Debug("Sorting by %s" % param)
 
     for meta_item in results:
+        sort_keys = ["userCount", "viewCount", "title"]
+        if sort in sort_keys:
+            param = sort
+        else:
+            param = "userCount"
+        Log.Debug("Sorting by %s" % param)
+
         list_item = results[meta_item]
         sort_reverse = param != "title"
         list_item = sorted(list_item, key=lambda i: i[param], reverse=sort_reverse)
