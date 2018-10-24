@@ -2264,12 +2264,6 @@ def query_library_popular():
         for rating_key in record_dict:
             dicts = record_dict[rating_key]
             meta_items.append(dicts)
-        sort_keys = ["title", "ratingKey", "userCount", "viewCount"]
-        if sort in sort_keys:
-            param = sort
-        else:
-            param = "viewCount"
-        meta_items = sorted(meta_items, key=lambda i: i[param], reverse=True)
 
         for item in meta_items:
             meta_type = item['type']
@@ -2335,19 +2329,23 @@ def query_library_popular():
         parent_item['userCount'] = parent_user_counts.get(lookup_val) or 0
         del parent_item['type']
         parent_list.append(parent_item)
-        if (sort == "User") | (sort == "user"):
-            param = "userCount"
-        else:
-            param = "viewCount"
-            results[parent_type] = sorted(parent_list, key=lambda i: i[param], reverse=True)
+        results[parent_type] = parent_list
 
     container_max = container_start + container_size
     for meta_item in results:
         list_item = results[meta_item]
+        sort_keys = ["title", "ratingKey", "userCount", "viewCount"]
+        if sort in sort_keys:
+            param = sort
+        else:
+            param = "userCount"
+        Log.Debug("Sorting by %s" % param)
+        list_item = sorted(list_item, key=lambda i: i[param], reverse=True)
         if len(list_item) < container_max:
             list_item = list_item[container_start:container_max]
         else:
             list_item = list_item[container_start:]
+
         results[meta_item] = list_item
 
     return results
