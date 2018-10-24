@@ -2245,7 +2245,6 @@ def query_library_popular():
                 }
 
             if str(account_id) not in user_dict:
-                Log.Debug("Appending user ID %s" % account_id)
                 user_dict[str(account_id)] = 1
 
             rec_count += 1
@@ -2265,8 +2264,9 @@ def query_library_popular():
         for rating_key in record_dict:
             dicts = record_dict[rating_key]
             meta_items.append(dicts)
-        if (sort == "User") | (sort == "user"):
-            param = "userCount"
+        sort_keys = ["title", "ratingKey", "userCount", "viewCount"]
+        if sort in sort_keys:
+            param = sort
         else:
             param = "viewCount"
         meta_items = sorted(meta_items, key=lambda i: i[param], reverse=True)
@@ -2281,7 +2281,7 @@ def query_library_popular():
             grandparent_type = False
 
             if meta_type == "episode":
-                grandparent_type = "series"
+                grandparent_type = "show"
                 grandparent_title = item['grandparentTitle']
             if meta_type == "track":
                 parent_title = item['parentTitle']
