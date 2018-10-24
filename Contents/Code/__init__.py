@@ -863,7 +863,13 @@ def Popular():
         for section in results:
             sc = FlexContainer(section)
             for record in results[section]:
+                user_list = record.get('userList') or []
+                if 'userList' in record:
+                    del record['userList']
                 me = FlexContainer("Media", record, False)
+                # for user in user_list:
+                #     uc = FlexContainer("User", user)
+                #     me.add(uc)
                 sc.add(me)
             mc.add(sc)
 
@@ -2203,12 +2209,14 @@ def query_library_popular():
 
     if cursor is not None:
         query = """
-            SELECT DISTINCT
+            SELECT
                 sm.library_section_id, sm.grandparent_title, sm.parent_title, sm.title, sm.viewed_at,
-                mi.id as rating_key, sm.account_id, mi.metadata_type, mi.parent_id
+                mi.id as rating_key, sm.account_id, accounts.name, mi.metadata_type, mi.parent_id
             FROM metadata_item_views as sm
+            INNER JOIN accounts
+                ON accounts.id = sm.account_id
             INNER JOIN metadata_items as mi
-            ON 
+                ON 
                 sm.title = mi.title 
                 AND mi.library_section_id = sm.library_section_id
                 AND mi.metadata_type = sm.metadata_type
@@ -2220,7 +2228,7 @@ def query_library_popular():
         Log.Debug("Query is '%s'" % query)
         record_dict = {}
         for section_id, grandparent_title, parent_title, title, viewed_at, rating_key, account_id, \
-                meta_type, parent_id in cursor.execute(query):
+                account_name, meta_type, parent_id in cursor.execute(query):
 
             if meta_type in META_TYPE_IDS:
                 meta_type = META_TYPE_IDS[meta_type]
@@ -2245,7 +2253,14 @@ def query_library_popular():
                 }
 
             if str(account_id) not in user_dict:
-                user_dict[str(account_id)] = 1
+                user_dict[str(account_id)] = {
+                    "viewedAt": viewed_at,
+                    "name": account_name
+                }
+            else:
+                last_viewed = user_dict[str(account_id)]
+                if last_viewed < viewed_at:
+                    user_dict[str(account_id)]["viewedAt"] = viewed_at
 
             rec_count += 1
 
@@ -2309,7 +2324,6 @@ def query_library_popular():
                     meta_parents.append({'title': grandparent_title, 'type': grandparent_type})
                     id_list.append(grandparent_title)
 
-            del item['userList']
             del item['type']
             meta_list.append(item)
             results[meta_type] = meta_list
@@ -2332,20 +2346,38 @@ def query_library_popular():
         results[parent_type] = parent_list
 
     container_max = container_start + container_size
+    sort_keys = ["userCount", "viewCount", "title"]
+    if sort in sort_keys:
+        param = sort
+    else:
+        param = "userCount"
+
+    Log.Debug("Sorting by %s" % param)
+
     for meta_item in results:
         list_item = results[meta_item]
-        sort_keys = ["title", "userCount", "viewCount"]
-        if sort in sort_keys:
-            param = sort
-        else:
-            param = "userCount"
-        Log.Debug("Sorting by %s" % param)
-        list_item = sorted(list_item, key=lambda i: i[param], reverse=True)
+        sort_reverse = param != "title"
+        list_item = sorted(list_item, key=lambda i: i[param], reverse=sort_reverse)
         if len(list_item) < container_max:
             list_item = list_item[container_start:container_max]
         else:
             list_item = list_item[container_start:]
+        sort_param_count = {}
+        resort = True
+        for item in list_item:
+            sort_param_count[item[param]] = 1
+            if len(sort_param_count) > 1:
+                resort = False
+                break
 
+        if resort:
+            if param == "userCount":
+                param = "viewCount"
+            else:
+                param = "title"
+            Log.Debug("All %s items have same sort param, sorting by %s." % (meta_item, param))
+            sort_reverse = param != "title"
+            list_item = sorted(list_item, key=lambda i: i[param], reverse=sort_reverse)
         results[meta_item] = list_item
 
     return results
