@@ -4,9 +4,11 @@ Control chromecast devices through Plex.
 
 ## Installation:
 
-Either download this file as a zip, and extract the directory Cast.bundle to your
-Plex plug-in directory, or if you have WebTools installed, enter the following url 
-to automatically install the plugin.
+Either download this file as a zip, and extract the directory FlexTV.bundle to your
+Plex plug-in directory.  Once extracted, the folder structure should be `/plug-ins/FlexTV.bundle`.
+
+Or, if you have WebTools installed, enter the following url 
+to automatically install the plugin:
 
 https://github.com/d8ahazard/FlexTV.bundle
 
