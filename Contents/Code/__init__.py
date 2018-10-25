@@ -2217,6 +2217,7 @@ def query_library_popular():
                 ON 
                 mi.guid = sm.guid
                 AND mi.title = sm.title
+                and mi.library_section_id = sm.library_section_id
             INNER JOIN accounts
                 ON accounts.id = sm.account_id
                 WHERE sm.viewed_at BETWEEN '%s' AND '%s'
