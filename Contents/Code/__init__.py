@@ -876,6 +876,29 @@ def Popular():
     return mc
 
 
+@route(STAT_PREFIX + '/library/quality')
+def Quality():
+    results = query_library_quality()
+    if (os.environ.get('ENC_TYPE') or 'xml') == 'json':
+        Log.Debug("RETURNING JSON")
+        mc = JsonContainer(results)
+
+    else:
+        mc = MediaContainer()
+        Log.Debug("Records? %s" % JSON.StringFromObject(results))
+        for meta_type, records in results.items():
+            me = FlexContainer("Meta")
+            me.set("Type", meta_type)
+            records = results[meta_type]
+            for record in records:
+                mi = FlexContainer("Media", record)
+                me.add(mi)
+
+            mc.add(me)
+
+    return mc
+
+
 @route(STAT_PREFIX + '/user')
 def User():
     users = query_user_stats()
@@ -1360,6 +1383,80 @@ def query_library_sizes():
 
         close_connection(connection)
 
+    return results
+
+
+def query_library_quality():
+    headers = sort_headers(["Container-Start", "Container-Size", "Type", "Section", "Sort"])
+    container_start = headers.get("Container-Start") or 0
+    container_size = headers.get("Container-Size") or 1000
+    entitlements = get_entitlements()
+    query_limit = "LIMIT %s, %s" % (container_start, container_size)
+
+    section = headers.get("Section") or False
+    sort = headers.get("Sort") or "DESC"
+
+    query_selector = "AND md.library_section_id in %s" % entitlements
+    type_selector = "(1, 4, 10)"
+    if "Type" in headers:
+        meta_type = headers.get("Type")
+        if meta_type in META_TYPE_NAMES:
+            meta_type = META_TYPE_NAMES[meta_type]
+        if int(meta_type) == meta_type:
+            type_selector = "(%s)" % meta_type
+    query_selector += " AND md.metadata_type IN %s" % type_selector
+    if section:
+        query_selector += " AND md.library_section_id == section"
+
+
+    conn = fetch_cursor()
+    cursor = conn[0]
+    connection = conn[1]
+    results = {}
+
+    if cursor is not None:
+        query = """
+            select md.title, md3.title as grandparentTitle, 
+            md.id, mi.width, mi.height, mi.size as fileSize, mi.duration, mi.bitrate, mi.container, mi.video_codec as videoCodec,
+            mi.audio_codec as audioCodec, mi.display_aspect_ratio as aspectRatio, mi.frames_per_second as framesPerSecond,
+            mi.audio_channels as audioChannels, md.library_section_id as sectionId, md.metadata_type as metaType,
+            ls.name as sectionName from media_items as mi
+            inner join metadata_items as md
+            on mi.metadata_item_id = md.id
+            left join metadata_items as md2
+            on md.parent_id = md2.id
+            left join metadata_items as md3
+            on md2.parent_id = md3.id
+            inner join library_sections as ls
+            on md.library_section_id = ls.id
+            where md.library_section_id is not null
+            %s
+            order by mi.width %s, mi.height %s, mi.bitrate %s, mi.audio_channels %s, md.title desc
+            %s;
+            
+        """ % (query_selector, sort, sort, sort, sort, query_limit)
+
+        Log.Debug("Query is %s" % query)
+        for row in cursor.execute(query):
+            descriptions = cursor.getdescription()
+            i = 0
+            dictz = {}
+            for title, foo in descriptions:
+                value = row[i]
+                if title == "metaType":
+                    meta_value = row[i]
+                    if meta_value in META_TYPE_IDS:
+                        meta_type = META_TYPE_IDS[meta_value]
+                    dictz[title] = meta_type
+                else:
+                    dictz[title] = row[i]
+                i += 1
+            meta_list = results.get(meta_type) or []
+            meta_list.append(dictz)
+            results[meta_type] = meta_list
+
+        close_connection(connection)
+    Log.Debug("No, really, sssss    : %s" % JSON.StringFromObject(results))
     return results
 
 
