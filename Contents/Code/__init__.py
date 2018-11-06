@@ -756,7 +756,7 @@ def Library():
 
 @route(STAT_PREFIX + '/library/growth')
 def Growth():
-    headers = sort_headers(["Interval", "Start", "End", "Container-Size", "Container-Start", "Type"])
+    headers = sort_headers(["Interval", "Start", "End", "Type"])
     records = query_library_growth(headers)
     total_array = {}
     for record in records:
@@ -836,14 +836,11 @@ def Growth():
 def Popular():
     results = query_library_popular()
     mc = FlexContainer()
-
+    Log.Debug("Results, for real: %s" % JSON.StringFromObject(results))
     for section in results:
-        sc = FlexContainer(section)
+        sc = FlexContainer(section, limit=True)
         for record in results[section]:
-            user_list = record.get('userList') or []
-            if 'userList' in record:
-                del record['userList']
-            me = FlexContainer("Media", record, False)
+            me = FlexContainer("Media", record, show_size=False)
             # for user in user_list:
             #     uc = FlexContainer("User", user)
             #     me.add(uc)
@@ -863,7 +860,7 @@ def Quality():
         me.set("Type", meta_type)
         records = results[meta_type]
         for record in records:
-            mi = FlexContainer("Media", record)
+            mi = FlexContainer("Media", record, limit=True)
             me.add(mi)
 
         mc.add(me)
@@ -886,7 +883,7 @@ def User():
             uc = FlexContainer("User", user, False)
             sc = FlexContainer("Views")
             for meta, items in user_meta.items():
-                vc = FlexContainer(meta)
+                vc = FlexContainer(meta, limit=True)
                 for item in items:
                     ic = FlexContainer("Meta", item)
                     vc.add(ic)
@@ -894,7 +891,7 @@ def User():
                 sc.add(vc)
             uc.add(sc)
             chrome_data = None
-            dp = FlexContainer("Devices", None, False)
+            dp = FlexContainer("Devices", None, False, limit=True)
 
             for device in user_devices:
                 if device["deviceName"] != "Chrome":
@@ -1275,7 +1272,7 @@ def player_string(values):
 ####################################
 # These functions are for stats stuff
 def build_tag_container(selection):
-    headers = sort_headers(["Container-Start", "Container-Size", "Type", "Section", "Include-Meta", "Meta-Size"])
+    headers = sort_headers(["Type", "Section", "Include-Meta", "Meta-Size"])
     tag_options = ["actor", "director", "writer", "genre", "country", "mood", "similar", "autotag", "collection"]
     meta_options = ["year", "contentRating", "studio", "score"]
     records = []
@@ -1298,10 +1295,10 @@ def build_tag_container(selection):
             add_meta = True
     Log.Debug("Add meta is %s" % add_meta)
     for tag_type in records:
-        tag_type_container = FlexContainer(tag_type["name"])
+        tag_type_container = FlexContainer(tag_type["name"], limit=True)
         tags = tag_type["children"]
         for tag in tags:
-            tag_container = FlexContainer(tag["type"], None, False)
+            tag_container = FlexContainer(tag["type"], show_size=False)
             tag_container.set("title", tag["name"])
             tag_container.set("totalItems", tag["count"])
             metas = tag["children"]
@@ -1556,11 +1553,6 @@ def query_tag_stats(selection, headers):
 
         results = []
 
-        container_size = int(headers.get("Container-Size") or 25)
-        container_start = int(headers.get("Container-Start") or DEFAULT_CONTAINER_START)
-        container_max = container_size + container_start
-        Log.Debug("Container size is set to %s, start to %s" % (container_size, container_start))
-
         tag_type_count = 0
         for tag_type in records:
             tags = records[tag_type]
@@ -1590,10 +1582,6 @@ def query_tag_stats(selection, headers):
                 tag_count += meta_count
                 tag_list.append(tag_record)
             tag_list = sorted(tag_list, key=lambda i: i['count'], reverse=True)
-            if len(tag_list) >= container_max:
-                tag_list = tag_list[container_start:container_size]
-            else:
-                tag_list = tag_list[container_start:]
             tag_type_record = {
                 "name": tag_type,
                 "type": "type",
@@ -2238,10 +2226,7 @@ def query_library_growth(headers):
 
 
 def query_library_popular():
-    headers = sort_headers(["Container-Start", "Container-Size", "Type", "Section", "Start", "End", "Interval", "Sort"])
-
-    container_size = int(headers.get("Container-Size") or 10000)
-    container_start = int(headers.get("Container-Start") or DEFAULT_CONTAINER_START)
+    headers = sort_headers(["Type", "Section", "Start", "End", "Interval", "Sort"])
 
     conn = fetch_cursor()
     cursor = conn[0]
@@ -2269,171 +2254,154 @@ def query_library_popular():
     end_date = interval[1]
 
     results = {}
-    meta_parents = []
-    parent_counts = {}
-    parent_user_counts = {}
-    id_list = []
 
     if cursor is not None:
         query = """
             SELECT
-                sm.library_section_id, sm.grandparent_title, sm.parent_title, sm.title, sm.viewed_at,
-                mi.id as rating_key, sm.account_id, accounts.name, mi.metadata_type, mi.parent_id
+                sm.library_section_id as sectionId, sm.[index] as number, mi2.title as parentTitle,
+                sm.title, sm.viewed_at as lastViewed, mi.id as ratingKey, sm.account_id as userId, accounts.name as userName,
+                mi.metadata_type as metaType, mi2.id as parentId, mi2.metadata_type as parentMetaType, mi2.[index] as parentIndex,
+                mi3.title as grandparentTitle, mi3.id as grandparentId, mi3.metadata_type as grandparentMetaType
             FROM metadata_item_views as sm
             INNER JOIN metadata_items as mi
                 ON 
                 mi.guid = sm.guid
                 AND mi.title = sm.title
                 and mi.library_section_id = sm.library_section_id
+            LEFT JOIN metadata_items as mi2
+                ON
+                mi.parent_id = mi2.id
+            LEFT JOIN metadata_items as mi3
+                ON
+                mi2.parent_id = mi3.id
             INNER JOIN accounts
                 ON accounts.id = sm.account_id
                 WHERE sm.viewed_at BETWEEN '%s' AND '%s'
             %s
-            order by rating_key;
+            order by ratingKey;
         """ % (start_date, end_date, selector)
 
         Log.Debug("Query is '%s'" % query)
-        record_dict = {}
-        for section_id, grandparent_title, parent_title, title, viewed_at, rating_key, account_id, \
-                account_name, meta_type, parent_id in cursor.execute(query):
+        results = {}
+        for row in cursor.execute(query):
+            descriptions = cursor.getdescription()
+            count = 0
+            dictz = {"viewCount": 1, "userList": []}
+            meta_type = "unknown"
+            for title, foo in descriptions:
+                value = row[count]
+                dictz[title] = value
+                if title == "ratingKey":
+                    dictz["art"] = "/library/metadata" + str(value) + "/art"
+                    dictz["thumb"] = "/library/metadata" + str(value) + "/thumb"
 
-            if meta_type in META_TYPE_IDS:
-                meta_type = META_TYPE_IDS[meta_type]
+                if title == "metaType":
+                    meta_type = META_TYPE_IDS.get(value) or value
+                    dictz[title] = meta_type
 
-            rec_count = 0
-            user_dict = {}
-            if str(rating_key) in record_dict:
-                dicts = record_dict[str(rating_key)]
-                rec_count = dicts['viewCount']
-                user_dict = dicts['userList']
-            else:
+                if title == "userName":
+                    dictz["userList"].append(value)
 
-                dicts = {
-                    "title": title,
-                    "parentTitle": parent_title,
-                    "parentId": parent_id,
-                    "grandparentTitle": grandparent_title,
-                    "type": meta_type,
-                    "ratingKey": rating_key,
-                    "thumb": "/library/metadata/" + str(rating_key) + "/thumb",
-                    "art": "/library/metadata/" + str(rating_key) + "/art"
-                }
-
-            if str(account_id) not in user_dict:
-                user_dict[str(account_id)] = {
-                    "viewedAt": viewed_at,
-                    "name": account_name
-                }
-            else:
-                last_viewed = user_dict[str(account_id)]
-                if last_viewed < viewed_at:
-                    user_dict[str(account_id)]["viewedAt"] = viewed_at
-
-            rec_count += 1
-
-            dicts["viewCount"] = rec_count
-            dicts["userList"] = user_dict
-            dicts["userCount"] = len(user_dict)
+                count += 1
 
             if meta_type == "episode":
-                dicts["banner"] = "/library/metadata/" + str(rating_key) + "/banner/"
+                dictz["banner"] = "/library/metadata/" + str(dictz['ratingKey']) + "/banner/"
 
-            record_dict[str(rating_key)] = dicts
+            rating_key = dictz['ratingKey']
+            if rating_key in results:
+                current = results[rating_key]
+                last_viewed = current['lastViewed']
+                if last_viewed > dictz["lastViewed"]:
+                    dictz = current
+                view_count = current['viewCount']
+                view_count += 1
+                dictz["viewCount"] = view_count
+                user_list = current['userList']
+                if dictz["userName"] not in user_list:
+                    user_list.append(dictz["userName"])
+                    dictz["userList"] = user_list
+
+            if dictz["parentId"] is not None:
+                parent_key = dictz['parentId']
+                existing_parent = results.get(parent_key) or {}
+                parent_count = existing_parent.get('viewCount') or 0
+                user_list = existing_parent.get('userList') or []
+                parent_user = dictz['userName']
+                if parent_user not in user_list:
+                    user_list.append(parent_user)
+                parent_count += 1
+                p_meta_type = META_TYPE_IDS.get(dictz['parentMetaType']) or "unknown"
+                parent_dictz = {
+                    "ratingKey": dictz['parentId'],
+                    "title": dictz['parentTitle'],
+                    "viewCount": parent_count,
+                    "userList": user_list,
+                    "metaType": p_meta_type,
+                    "art": "/library/metadata" + str(dictz['parentId']) + "/art",
+                    "thumb": "/library/metadata" + str(dictz['parentId']) + "/thumb"
+                }
+                if p_meta_type == "album":
+                    parent_dictz["artist"] = dictz['grandparentTitle']
+                    parent_dictz["artistKey"] = dictz['grandparentId']
+                elif p_meta_type == "season":
+                    parent_dictz["series"] = dictz['grandparentTitle']
+                    parent_dictz["seriesKey"] = dictz['grandparentId']
+                    parent_dictz["index"] = dictz['parentIndex']
+                else:
+                    del dictz['number']
+                    del dictz['parentIndex']
+                results[parent_key] = parent_dictz
+
+            if dictz["grandparentId"] is not None:
+                grandparent_key = dictz['grandparentId']
+                existing_grandparent = results.get(grandparent_key) or {}
+                grandparent_count = existing_grandparent.get('viewCount') or 0
+                user_list = existing_grandparent.get('userList') or []
+                grandparent_user = dictz['userName']
+                if grandparent_user not in user_list:
+                    user_list.append(grandparent_user)
+                grandparent_count += 1
+                gp_meta_type = META_TYPE_IDS.get(dictz['grandparentMetaType']) or "unknown"
+                grandparent_dictz = {
+                    "ratingKey": dictz['grandparentId'],
+                    "title": dictz['grandparentTitle'],
+                    "viewCount": grandparent_count,
+                    "userList": user_list,
+                    "metaType": gp_meta_type,
+                    "art": "/library/metadata" + str(dictz['grandparentId']) + "/art",
+                    "thumb": "/library/metadata" + str(dictz['grandparentId']) + "/thumb"
+                }
+                results[grandparent_key] = grandparent_dictz
+            del dictz['grandparentMetaType']
+            del dictz['parentMetaType']
+            results[rating_key] = dictz
 
         close_connection(connection)
 
-        meta_items = []
-        for rating_key in record_dict:
-            dicts = record_dict[rating_key]
-            meta_items.append(dicts)
+    sorted_media = {}
+    for rating_key, media in results.items():
+        meta_type = media["metaType"]
+        meta_list = sorted_media.get(meta_type) or []
+        media['userCount'] = len(media['userList'])
+        del media['userList']
+        meta_list.append(media)
+        sorted_media[meta_type] = meta_list
 
-        for item in meta_items:
-            meta_type = item['type']
-            user_count = item['userCount']
-            meta_list = []
-            if meta_type in results:
-                meta_list = results[meta_type]
-
-            grandparent_type = False
-
-            if meta_type == "episode":
-                grandparent_type = "show"
-                grandparent_title = item['grandparentTitle']
-            if meta_type == "track":
-                parent_title = item['parentTitle']
-                parent_id = item['parentId']
-                parent_type = "album"
-                grandparent_type = "artist"
-                grandparent_title = item['grandparentTitle']
-                parent_count = parent_counts.get(str(parent_id)) or 0
-                parent_count += 1
-                parent_counts[str(parent_id)] = parent_count
-
-                user_total = parent_user_counts.get(str(parent_id)) or 0
-                if user_count > user_total:
-                    user_total = user_count
-                parent_user_counts[str(parent_id)] = user_total
-
-                if str(parent_id) not in id_list:
-                    meta_parents.append({'title': parent_title, 'ratingKey': parent_id, 'type': parent_type})
-                    id_list.append(str(parent_id))
-
-            if grandparent_type is not False:
-                parent_count = parent_counts.get(grandparent_title) or 0
-                parent_count += 1
-                parent_counts[grandparent_title] = parent_count
-                user_total = parent_user_counts.get(grandparent_title) or 0
-                if user_count > user_total:
-                    user_total = user_count
-                parent_user_counts[grandparent_title] = user_total
-
-                if str(grandparent_title) not in id_list:
-                    meta_parents.append({'title': grandparent_title, 'type': grandparent_type})
-                    id_list.append(grandparent_title)
-
-            del item['type']
-            meta_list.append(item)
-            results[meta_type] = meta_list
-
-    for parent_item in meta_parents:
-        parent_type = parent_item['type']
-        parent_title = parent_item['title']
-        parent_list = results.get(parent_type) or []
-        lookup_val = parent_title
-        if parent_type == 'album':
-            rating_key = parent_item['ratingKey']
-            lookup_val = str(rating_key)
-            parent_item['thumb'] = "/library/metadata/" + str(rating_key) + "/thumb"
-            parent_item["art"] = "/library/metadata/" + str(rating_key) + "/art"
-
-        parent_item['viewCount'] = parent_counts.get(lookup_val) or 0
-        parent_item['userCount'] = parent_user_counts.get(lookup_val) or 0
-        del parent_item['type']
-        parent_list.append(parent_item)
-        results[parent_type] = parent_list
-
-    container_max = container_start + container_size
-
-
-    for meta_item in results:
+    results = {}
+    for meta_type, list_item in sorted_media.items():
         sort_keys = ["userCount", "viewCount", "title"]
         if sort in sort_keys:
             param = sort
         else:
             param = "userCount"
-        Log.Debug("Sorting by %s" % param)
+        Log.Debug("Sorting stuff by %s" % param)
 
-        list_item = results[meta_item]
         sort_reverse = param != "title"
-        list_item = sorted(list_item, key=lambda i: i[param], reverse=sort_reverse)
-        if len(list_item) < container_max:
-            list_item = list_item[container_start:container_max]
-        else:
-            list_item = list_item[container_start:]
+        list_item = sorted(list_item, key=lambda z: z[param], reverse=sort_reverse)
         sort_param_count = {}
         resort = True
         for item in list_item:
-            sort_param_count[item[param]] = 1
+            sort_param_count[str(item[param])] = 1
             if len(sort_param_count) > 1:
                 resort = False
                 break
@@ -2443,10 +2411,10 @@ def query_library_popular():
                 param = "viewCount"
             else:
                 param = "title"
-            Log.Debug("All %s items have same sort param, sorting by %s." % (meta_item, param))
+            Log.Debug("All %s items have same sort param, sorting by %s." % (meta_type, param))
             sort_reverse = param != "title"
             list_item = sorted(list_item, key=lambda i: i[param], reverse=sort_reverse)
-        results[meta_item] = list_item
+        results[meta_type] = list_item
 
     return results
 

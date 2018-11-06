@@ -6,17 +6,25 @@ ObjectClass = getattr(getattr(Redirect, "_object_class"), "__bases__")[0]
 class FlexContainer(ObjectClass):
 
     def __init__(self, tag="MediaContainer", attributes=None, show_size=True,
-                 allowed_attributes=None, allowed_children=None):
+                 allowed_attributes=None, allowed_children=None, limit=False):
         ObjectClass.__init__(self, "")
         encoding = "xml"
+        self.container_start = 0
+        self.container_size = False
         for key, value in Request.Headers.items():
             if (key == "Accept") | (key == "X-Plex-Accept"):
                 if (value == "application/json") | (value == "json"):
                     encoding = "json"
                     break
+            if (key == "Container-Start") | (key == "X-Plex-Container-Start"):
+                self.container_start = int(value)
+            if (key == "Container-Size") | (key == "X-Plex-Container-Size"):
+                if limit:
+                    self.container_size = int(value)
         self.encoding = encoding
         self.tag = tag
         self.child_string = ""
+        self.child_strings = []
         self.children = []
         self.attributes = attributes
         self.show_size = show_size
@@ -39,8 +47,7 @@ class FlexContainer(ObjectClass):
     def add(self, obj):
         self.children.append(obj)
         new_string = obj.to_xml()
-        cs = self.child_string + new_string
-        self.child_string = cs
+        self.child_strings.append(new_string)
 
     def set(self, key, value):
         if self.attributes is None:
@@ -60,8 +67,14 @@ class FlexContainer(ObjectClass):
 
     def to_xml(self):
         self_tag = str(self.tag).capitalize()
-        child_string = self.child_string
+
         self_attributes = self.attributes
+        if self.container_size:
+            container_max = self.container_start + self.container_size
+            if len(self.child_strings) > container_max:
+                self.child_strings = self.child_strings[self.container_start:container_max]
+
+        child_strings = self.child_strings
 
         if self.show_size is True:
             if self_attributes is None:
@@ -71,7 +84,7 @@ class FlexContainer(ObjectClass):
             if self.children is None:
                 self_size = 0
             else:
-                self_size = len(self.children)
+                self_size = len(self.child_strings)
             self_attributes["size"] = self_size
 
         attribute_string = ""
@@ -98,10 +111,11 @@ class FlexContainer(ObjectClass):
                         attribute_string += ' %s="%s"' % (key, value)
                 else:
                     Log.Error("Attribute " + key + " is not allowed in this container.")
-            
-        if child_string == "":
+
+        if len(child_strings) == 0:
             string = "<%s%s/>" % (self_tag, attribute_string)
         else:
+            child_string = " ".join(child_strings)
             string = "<%s%s>%s</%s>\n" % (self_tag, attribute_string, child_string, self_tag)
 
         return string
@@ -116,6 +130,10 @@ class FlexContainer(ObjectClass):
             if "size" in json_obj:
                 json_obj["oldSize"] = json_obj["size"]
             if self.children is not None:
+                if self.container_size:
+                    container_max = self.container_start + self.container_size
+                    if len(self.children) > container_max:
+                        self.children = self.children[self.container_start:container_max]
                 self_size = len(self.children)
             json_obj["size"] = self_size
 
