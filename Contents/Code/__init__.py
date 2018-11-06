@@ -31,7 +31,7 @@ import log_helper
 from CustomContainerOriginal import MediaContainer, DeviceContainer, CastContainer, ZipObject, StatusContainer, \
     MetaContainer
 from CustomContainer import AnyContainer
-from flex_container import FlexContainer, JsonContainer
+from flex_container import FlexContainer
 from lib import Plex
 
 UNICODE_MAP = {
@@ -95,7 +95,6 @@ ICON_CAST_REFRESH = 'icon-cast_refresh.png'
 ICON_PLEX_CLIENT = 'icon-plex_client.png'
 TEST_CLIP = 'test.mp3'
 PLUGIN_IDENTIFIER = "com.plexapp.plugins.FlexTV"
-os.environ['ENC_TYPE'] = 'xml'
 
 
 # Start function
@@ -666,13 +665,11 @@ def Score():
 
 @route(STAT_PREFIX + '/library')
 def Library():
-    mc = MediaContainer()
-    mi = []
+    mc = FlexContainer()
     Log.Debug("Here's where we fetch some library stats.")
     sections = {}
     recs = query_library_stats()
     sizes = query_library_sizes()
-    enc_type = os.environ.get("ENC_TYPE") or "xml"
     records = recs[0]
     sec_counts = recs[1]
     for record in records:
@@ -712,8 +709,7 @@ def Library():
             record_data = {
                 "totalItems": record["totalItems"]
             }
-            vc = AnyContainer(record_data, item_type, False)
-            jc = {item_type: record_data}
+            vc = FlexContainer(item_type, record_data, False)
 
             if record["lastViewedAt"] is not None:
                 last_item = {
@@ -726,50 +722,36 @@ def Library():
                     "username": record['username'],
                     "userId": record['userId']
                 }
-                li = AnyContainer(last_item, "lastViewed", False)
+                li = FlexContainer("lastViewed", last_item, False)
                 vc.add(li)
-                if enc_type == 'json':
-                    jc[item_type]['lastItem'] = last_item
 
-            if enc_type == 'json':
-                section_children.append(jc)
-            else:
-                section_children.append(vc)
+            section_children.append(vc)
 
-        section_data = {
-            "title": name,
-            "id": sec_id,
-            "totalItems": item_count,
-            "playableItems": playable_count,
-            "playCount": play_count,
-            "type": sec_type
-        }
+            section_data = {
+                "title": name,
+                "id": sec_id,
+                "totalItems": item_count,
+                "playableItems": playable_count,
+                "playCount": play_count,
+                "type": sec_type
+            }
 
-        for sec_size in sizes:
-            if sec_size['section_id'] == sec_id:
-                Log.Debug("Found a matching section size...foo")
-                section_data['mediaSize'] = sec_size['size']
+            for sec_size in sizes:
+                if sec_size['section_id'] == sec_id:
+                    Log.Debug("Found a matching section size...foo")
+                    section_data['mediaSize'] = sec_size['size']
 
-        sec_unique_played = sec_counts.get(str(sec_id)) or None
-        if sec_unique_played is not None:
-            Log.Debug("Hey, we got the unique count")
-            section_data["watchedItems"] = sec_unique_played["viewedItems"]
-        ac = AnyContainer(section_data, "Section", "False")
-        bc = section_data
-        for child in section_children:
-            if enc_type != 'json':
+            sec_unique_played = sec_counts.get(str(sec_id)) or None
+            if sec_unique_played is not None:
+                Log.Debug("Hey, we got the unique count")
+                section_data["watchedItems"] = sec_unique_played["viewedItems"]
+            ac = FlexContainer("Section", section_data, False)
+            bc = section_data
+            for child in section_children:
                 ac.add(child)
-
-            if enc_type == 'json':
-                bc["Sections"] = section_children
-                mi.append(bc)
-        else:
             mc.add(ac)
 
-    if enc_type == 'json':
-        return JsonContainer(mi)
-    else:
-        return mc
+    return mc
 
 
 @route(STAT_PREFIX + '/library/growth')
@@ -793,7 +775,7 @@ def Growth():
         year_array[month] = month_array
         total_array[year] = year_array
 
-    mc = MediaContainer()
+    mc = FlexContainer()
     grand_total = 0
     types_all = {}
     for y in range(0000, 3000):
@@ -853,25 +835,20 @@ def Growth():
 @route(STAT_PREFIX + '/library/popular')
 def Popular():
     results = query_library_popular()
-    if (os.environ.get('ENC_TYPE') or 'xml') == 'json':
-        Log.Debug("RETURNING JSON")
-        mc = JsonContainer(results)
+    mc = FlexContainer()
 
-    else:
-        mc = MediaContainer()
-
-        for section in results:
-            sc = FlexContainer(section)
-            for record in results[section]:
-                user_list = record.get('userList') or []
-                if 'userList' in record:
-                    del record['userList']
-                me = FlexContainer("Media", record, False)
-                # for user in user_list:
-                #     uc = FlexContainer("User", user)
-                #     me.add(uc)
-                sc.add(me)
-            mc.add(sc)
+    for section in results:
+        sc = FlexContainer(section)
+        for record in results[section]:
+            user_list = record.get('userList') or []
+            if 'userList' in record:
+                del record['userList']
+            me = FlexContainer("Media", record, False)
+            # for user in user_list:
+            #     uc = FlexContainer("User", user)
+            #     me.add(uc)
+            sc.add(me)
+        mc.add(sc)
 
     return mc
 
@@ -879,22 +856,17 @@ def Popular():
 @route(STAT_PREFIX + '/library/quality')
 def Quality():
     results = query_library_quality()
-    if (os.environ.get('ENC_TYPE') or 'xml') == 'json':
-        Log.Debug("RETURNING JSON")
-        mc = JsonContainer(results)
+    mc = FlexContainer()
+    Log.Debug("Records? %s" % JSON.StringFromObject(results))
+    for meta_type, records in results.items():
+        me = FlexContainer("Meta")
+        me.set("Type", meta_type)
+        records = results[meta_type]
+        for record in records:
+            mi = FlexContainer("Media", record)
+            me.add(mi)
 
-    else:
-        mc = MediaContainer()
-        Log.Debug("Records? %s" % JSON.StringFromObject(results))
-        for meta_type, records in results.items():
-            me = FlexContainer("Meta")
-            me.set("Type", meta_type)
-            records = results[meta_type]
-            for record in records:
-                mi = FlexContainer("Media", record)
-                me.add(mi)
-
-            mc.add(me)
+        mc.add(me)
 
     return mc
 
@@ -903,49 +875,44 @@ def Quality():
 def User():
     users = query_user_stats()
 
-    if (os.environ.get('ENC_TYPE') or 'xml') == 'json':
-        Log.Debug("Returning JSON data")
-        return JsonContainer(users)
+    Log.Debug("Returning XML")
+    mc = FlexContainer()
+    if users is not None:
+        for user in users:
+            user_meta = user['meta']
+            user_devices = user['devices']
+            del user['meta']
+            del user['devices']
+            uc = FlexContainer("User", user, False)
+            sc = FlexContainer("Views")
+            for meta, items in user_meta.items():
+                vc = FlexContainer(meta)
+                for item in items:
+                    ic = FlexContainer("Meta", item)
+                    vc.add(ic)
 
-    else:
-        Log.Debug("Returning XML")
-        mc = MediaContainer()
-        if users is not None:
-            for user in users:
-                user_meta = user['meta']
-                user_devices = user['devices']
-                del user['meta']
-                del user['devices']
-                uc = FlexContainer("User", user, False)
-                sc = FlexContainer("Views")
-                for meta, items in user_meta.items():
-                    vc = FlexContainer(meta)
-                    for item in items:
-                        ic = FlexContainer("Meta", item)
-                        vc.add(ic)
+                sc.add(vc)
+            uc.add(sc)
+            chrome_data = None
+            dp = FlexContainer("Devices", None, False)
 
-                    sc.add(vc)
-                uc.add(sc)
-                chrome_data = None
-                dp = FlexContainer("Devices", None, False)
-
-                for device in user_devices:
-                    if device["deviceName"] != "Chrome":
-                        dc = FlexContainer("Device", device, False)
-                        dp.add(dc)
-                    else:
-                        chrome_bytes = 0
-                        if chrome_data is None:
-                            chrome_data = device
-                        else:
-                            chrome_bytes = device["totalBytes"] + chrome_data.get("totalBytes") or 0
-                        chrome_data["totalBytes"] = chrome_bytes
-
-                if chrome_data is not None:
-                    dc = FlexContainer("Device", chrome_data, False)
+            for device in user_devices:
+                if device["deviceName"] != "Chrome":
+                    dc = FlexContainer("Device", device, False)
                     dp.add(dc)
-                uc.add(dp)
-                mc.add(uc)
+                else:
+                    chrome_bytes = 0
+                    if chrome_data is None:
+                        chrome_data = device
+                    else:
+                        chrome_bytes = device["totalBytes"] + chrome_data.get("totalBytes") or 0
+                    chrome_data["totalBytes"] = chrome_bytes
+
+            if chrome_data is not None:
+                dc = FlexContainer("Device", chrome_data, False)
+                dp.add(dc)
+            uc.add(dp)
+            mc.add(uc)
 
         Log.Debug("Still alive, returning data")
 
@@ -1322,43 +1289,42 @@ def build_tag_container(selection):
         records += records2
 
     Log.Debug("We have a total of %s records to process" % len(records))
-    if (os.environ.get('ENC_TYPE') or 'xml') == 'json':
-        return JsonContainer(records)
+    media_container = FlexContainer()
+    add_meta = False
+    if "Include-Meta" in headers:
+        add_meta = headers["Include-Meta"].capitalize()
     else:
-        out = MediaContainer()
-        add_meta = False
-        if "Include-Meta" in headers:
-            add_meta = headers["Include-Meta"]
-        else:
-            if "Meta-Size" in headers:
-                add_meta = True
-
-        for tag_type in records:
-            ttc = FlexContainer(tag_type["name"])
-            tags = tag_type["children"]
-            for tag in tags:
-                tc = FlexContainer(tag["type"], None, False)
-                tc.set("title", tag["name"])
-                tc.set("totalItems", tag["count"])
-                metas = tag["children"]
-                for meta in metas:
-                    me = FlexContainer(meta["type"])
-                    me.set("type", meta["name"])
-                    medias = meta["children"]
-                    medias = sorted(medias, key=lambda i: i['added'], reverse=True)
-                    itemCount = len(medias)
-                    if "Meta-Size" in headers:
-                        if len(medias) > headers["Meta-Size"]:
-                            medias = medias[:headers["Meta-Size"]]
+        if "Meta-Size" in headers:
+            add_meta = True
+    Log.Debug("Add meta is %s" % add_meta)
+    for tag_type in records:
+        tag_type_container = FlexContainer(tag_type["name"])
+        tags = tag_type["children"]
+        for tag in tags:
+            tag_container = FlexContainer(tag["type"], None, False)
+            tag_container.set("title", tag["name"])
+            tag_container.set("totalItems", tag["count"])
+            metas = tag["children"]
+            for meta in metas:
+                meta_type_container = FlexContainer(meta["type"])
+                meta_type_container.set("type", meta["name"])
+                medias = meta["children"]
+                medias = sorted(medias, key=lambda i: i['added'], reverse=True)
+                item_count = len(medias)
+                if "Meta-Size" in headers:
+                    if len(medias) > headers["Meta-Size"]:
+                        medias = medias[:headers["Meta-Size"]]
                     for media in medias:
-                        mc = FlexContainer("Media", media)
-                        me.add(mc)
-                    if add_meta:
-                        tc.add(me)
-                    tc.set(meta["name"] + "Count", itemCount)
-                ttc.add(tc)
-            out.add(ttc)
-        return out
+                        media_item_container = FlexContainer("Media", media)
+                        meta_type_container.add(media_item_container)
+                tag_container.set(meta["name"] + "Count", item_count)
+                if add_meta:
+                    Log.Debug("Adding meta!!")
+                    tag_container.add(meta_type_container)
+
+            tag_type_container.add(tag_container)
+        media_container.add(tag_type_container)
+    return media_container
 
 
 def query_library_sizes():
@@ -1408,7 +1374,6 @@ def query_library_quality():
     if section:
         query_selector += " AND md.library_section_id == section"
 
-
     conn = fetch_cursor()
     cursor = conn[0]
     connection = conn[1]
@@ -1417,7 +1382,7 @@ def query_library_quality():
     if cursor is not None:
         query = """
             select md.title, md3.title as grandparentTitle, 
-            md.id, mi.width, mi.height, mi.size as fileSize, mi.duration, mi.bitrate, mi.container, mi.video_codec as videoCodec,
+            md.id as ratingKey, mi.width, mi.height, mi.size as fileSize, mi.duration, mi.bitrate, mi.container, mi.video_codec as videoCodec,
             mi.audio_codec as audioCodec, mi.display_aspect_ratio as aspectRatio, mi.frames_per_second as framesPerSecond,
             mi.audio_channels as audioChannels, md.library_section_id as sectionId, md.metadata_type as metaType,
             ls.name as sectionName from media_items as mi
@@ -1441,17 +1406,22 @@ def query_library_quality():
             descriptions = cursor.getdescription()
             i = 0
             dictz = {}
+            meta_type = "unknown"
             for title, foo in descriptions:
                 value = row[i]
+                if title == "ratingKey":
+                    dictz["art"] = "/library/metadata" + str(value) + "/art"
+                    dictz["thumb"] = "/library/metadata" + str(value) + "/thumb"
+
+                dictz[title] = row[i]
                 if title == "metaType":
-                    meta_value = row[i]
-                    if meta_value in META_TYPE_IDS:
-                        meta_type = META_TYPE_IDS[meta_value]
+                    meta_type = META_TYPE_IDS.get(value) or value
                     dictz[title] = meta_type
-                else:
-                    dictz[title] = row[i]
+
                 i += 1
             meta_list = results.get(meta_type) or []
+            if meta_type == "episode":
+                dictz["banner"] = "/library/metadata/" + str(dictz["ratingKey"]) + "/banner/"
             meta_list.append(dictz)
             results[meta_type] = meta_list
 
@@ -2695,7 +2665,6 @@ def get_time_difference(time_start, time_end):
 
 def sort_headers(header_list, strict=False):
     returns = {}
-    os.environ['ENC_TYPE'] = "xml"
     for key, value in Request.Headers.items():
 
         for item in header_list:
@@ -2712,13 +2681,6 @@ def sort_headers(header_list, strict=False):
 
                 returns[item] = value
                 header_list.remove(item)
-
-    for key, value in returns.items():
-        if key == "Accept":
-            if (value == "application/json") | (value == "json"):
-                os.environ['ENC_TYPE'] = "json"
-            else:
-                os.environ['ENC_TYPE'] = "xml"
 
     if strict:
         len2 = len(header_list)
