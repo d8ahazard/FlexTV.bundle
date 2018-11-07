@@ -2309,7 +2309,7 @@ def query_library_popular():
         for row in cursor.execute(query):
             descriptions = cursor.getdescription()
             count = 0
-            record = {"viewCount": 0, "users": {}}
+            record = {"playCount": 0, "users": {}}
             for key, foo in descriptions:
                 value = row[count]
                 record[key] = value
@@ -2332,9 +2332,9 @@ def query_library_popular():
                 last_viewed = record_last
             else:
                 last_viewed = viewed_at
-            view_count = record.get("viewCount") or 0
+            view_count = record.get("playCount") or 0
             view_count += 1
-            record["viewCount"] = view_count
+            record["playCount"] = view_count
 
             users_dict = record.get('users') or {}
             user_record = users_dict.get(user_name) or {
@@ -2363,7 +2363,7 @@ def query_library_popular():
                     if sub_last > last_viewed:
                         last_viewed = sub_last
                     sub_record['lastViewed'] = last_viewed
-                    sub_count = sub_record.get('viewCount') or 0
+                    sub_count = sub_record.get('playCount') or 0
                     sub_users_dict = sub_record.get('users') or {}
                     sub_user_record = sub_users_dict.get(user_name) or {
                         "userName": user_name,
@@ -2374,13 +2374,13 @@ def query_library_popular():
                     sub_user_record["views"] = sub_user_views
                     sub_users_dict[user_name] = sub_user_record
                     sub_record['users'] = sub_users_dict
-                    sub_view_count = sub_user_record.get("viewCount") or 0
+                    sub_view_count = sub_user_record.get("playCount") or 0
                     sub_view_count += 1
-                    sub_user_record["viewCount"] = sub_view_count
+                    sub_user_record["playCount"] = sub_view_count
                     sub_users_dict[user_name] = sub_user_record
                     sub_count += 1
                     sub_meta_type = META_TYPE_IDS.get(record[key + 'MetaType']) or "unknown"
-                    sub_record["viewCount"] = sub_count
+                    sub_record["playCount"] = sub_count
                     sub_record["metaType"] = sub_meta_type
                     if sub_meta_type == "album":
                         sub_record["artist"] = record[key + 'Title']
@@ -2423,7 +2423,7 @@ def query_library_popular():
 
     results = {}
     for meta_type, list_item in sorted_media.items():
-        sort_keys = ["userCount", "viewCount", "title"]
+        sort_keys = ["userCount", "playCount", "title"]
         if sort in sort_keys:
             param = sort
         else:
@@ -2442,7 +2442,7 @@ def query_library_popular():
 
         if resort:
             if param == "userCount":
-                param = "viewCount"
+                param = "playCount"
             else:
                 param = "title"
             Log.Debug("All %s items have same sort param, sorting by %s." % (meta_type, param))
