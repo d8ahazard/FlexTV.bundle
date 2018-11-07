@@ -836,14 +836,37 @@ def Growth():
 def Popular():
     results = query_library_popular()
     mc = FlexContainer()
-    Log.Debug("Results, for real: %s" % JSON.StringFromObject(results))
     for section in results:
         sc = FlexContainer(section, limit=True)
         for record in results[section]:
+            rec_users = {}
+            if "users" in record:
+                rec_users = record["users"]
+                del record["users"]
+                if "userName" in record:
+                    del record["userName"]
+                if "userId" in record:
+                    del record["userId"]
             me = FlexContainer("Media", record, show_size=False)
-            # for user in user_list:
-            #     uc = FlexContainer("User", user)
-            #     me.add(uc)
+            usc = FlexContainer("Users", show_size=False)
+            view_total = 0
+            for userName, userData in rec_users.items():
+                vc = FlexContainer("Views")
+                views = userData.get("views") or []
+                views = sorted(views, key=lambda z: z['dateViewed'], reverse=True)
+                if "views" in userData:
+                    del userData["views"]
+                uc = FlexContainer("User", userData, show_size=False)
+                for view in views:
+                    vsc = FlexContainer("View", view, show_size=False)
+                    vc.add(vsc)
+                uc.add(vc)
+                uc.set("playCount", vc.size())
+                view_total += vc.size()
+                usc.add(uc)
+            usc.set('userCount', usc.size())
+            usc.set('playCount', view_total)
+            me.add(usc)
             sc.add(me)
         mc.add(sc)
 
@@ -854,7 +877,7 @@ def Popular():
 def Quality():
     results = query_library_quality()
     mc = FlexContainer()
-    Log.Debug("Records? %s" % JSON.StringFromObject(results))
+    Log.Debug("Record: %s" % JSON.StringFromObject(results))
     for meta_type, records in results.items():
         me = FlexContainer("Meta")
         me.set("Type", meta_type)
@@ -2278,7 +2301,7 @@ def query_library_popular():
                 ON accounts.id = sm.account_id
                 WHERE sm.viewed_at BETWEEN '%s' AND '%s'
             %s
-            order by ratingKey;
+            order by ratingKey, lastViewed;
         """ % (start_date, end_date, selector)
 
         Log.Debug("Query is '%s'" % query)
@@ -2286,104 +2309,115 @@ def query_library_popular():
         for row in cursor.execute(query):
             descriptions = cursor.getdescription()
             count = 0
-            dictz = {"viewCount": 1, "userList": []}
-            meta_type = "unknown"
-            for title, foo in descriptions:
+            record = {"viewCount": 0, "users": {}}
+            for key, foo in descriptions:
                 value = row[count]
-                dictz[title] = value
-                if title == "ratingKey":
-                    dictz["art"] = "/library/metadata" + str(value) + "/art"
-                    dictz["thumb"] = "/library/metadata" + str(value) + "/thumb"
+                record[key] = value
 
-                if title == "metaType":
+                if key == "metaType":
                     meta_type = META_TYPE_IDS.get(value) or value
-                    dictz[title] = meta_type
-
-                if title == "userName":
-                    dictz["userList"].append(value)
+                    record[key] = meta_type
 
                 count += 1
 
-            if meta_type == "episode":
-                dictz["banner"] = "/library/metadata/" + str(dictz['ratingKey']) + "/banner/"
+            # Done building "item", now do stuff
+            rating_key = record['ratingKey']
+            user_name = record['userName']
+            user_id = record['userId']
+            viewed_at = record['lastViewed']
 
-            rating_key = dictz['ratingKey']
-            if rating_key in results:
-                current = results[rating_key]
-                last_viewed = current['lastViewed']
-                if last_viewed > dictz["lastViewed"]:
-                    dictz = current
-                view_count = current['viewCount']
-                view_count += 1
-                dictz["viewCount"] = view_count
-                user_list = current['userList']
-                if dictz["userName"] not in user_list:
-                    user_list.append(dictz["userName"])
-                    dictz["userList"] = user_list
+            record = results.get(rating_key) or record
+            record_last = record['lastViewed']
+            if record_last > viewed_at:
+                last_viewed = record_last
+            else:
+                last_viewed = viewed_at
+            view_count = record.get("viewCount") or 0
+            view_count += 1
+            record["viewCount"] = view_count
 
-            if dictz["parentId"] is not None:
-                parent_key = dictz['parentId']
-                existing_parent = results.get(parent_key) or {}
-                parent_count = existing_parent.get('viewCount') or 0
-                user_list = existing_parent.get('userList') or []
-                parent_user = dictz['userName']
-                if parent_user not in user_list:
-                    user_list.append(parent_user)
-                parent_count += 1
-                p_meta_type = META_TYPE_IDS.get(dictz['parentMetaType']) or "unknown"
-                parent_dictz = {
-                    "ratingKey": dictz['parentId'],
-                    "title": dictz['parentTitle'],
-                    "viewCount": parent_count,
-                    "userList": user_list,
-                    "metaType": p_meta_type,
-                    "art": "/library/metadata" + str(dictz['parentId']) + "/art",
-                    "thumb": "/library/metadata" + str(dictz['parentId']) + "/thumb"
-                }
-                if p_meta_type == "album":
-                    parent_dictz["artist"] = dictz['grandparentTitle']
-                    parent_dictz["artistKey"] = dictz['grandparentId']
-                elif p_meta_type == "season":
-                    parent_dictz["series"] = dictz['grandparentTitle']
-                    parent_dictz["seriesKey"] = dictz['grandparentId']
-                    parent_dictz["index"] = dictz['parentIndex']
-                else:
-                    del dictz['number']
-                    del dictz['parentIndex']
-                results[parent_key] = parent_dictz
+            users_dict = record.get('users') or {}
+            user_record = users_dict.get(user_name) or {
+                "userName": user_name,
+                "userId": user_id
+            }
+            user_views = user_record.get("views") or []
+            user_views.append({"dateViewed": viewed_at})
+            user_record["views"] = user_views
+            users_dict[user_name] = user_record
+            record['users'] = users_dict
+            record['lastViewed'] = last_viewed
 
-            if dictz["grandparentId"] is not None:
-                grandparent_key = dictz['grandparentId']
-                existing_grandparent = results.get(grandparent_key) or {}
-                grandparent_count = existing_grandparent.get('viewCount') or 0
-                user_list = existing_grandparent.get('userList') or []
-                grandparent_user = dictz['userName']
-                if grandparent_user not in user_list:
-                    user_list.append(grandparent_user)
-                grandparent_count += 1
-                gp_meta_type = META_TYPE_IDS.get(dictz['grandparentMetaType']) or "unknown"
-                grandparent_dictz = {
-                    "ratingKey": dictz['grandparentId'],
-                    "title": dictz['grandparentTitle'],
-                    "viewCount": grandparent_count,
-                    "userList": user_list,
-                    "metaType": gp_meta_type,
-                    "art": "/library/metadata" + str(dictz['grandparentId']) + "/art",
-                    "thumb": "/library/metadata" + str(dictz['grandparentId']) + "/thumb"
-                }
-                results[grandparent_key] = grandparent_dictz
-            del dictz['grandparentMetaType']
-            del dictz['parentMetaType']
-            results[rating_key] = dictz
+            subkeys = ["parent", "grandparent"]
+
+            for key in subkeys:
+                # Build/check parent, grandparents
+                if record[key + "Id"] is not None:
+                    sub_id = record[key + "Id"]
+                    sub_record = results.get(sub_id) or {
+                        "ratingKey": record[key + 'Id'],
+                        "title": record[key + 'Title'],
+                        "lastViewed": last_viewed
+                    }
+                    sub_last = sub_record['lastViewed']
+                    if sub_last > last_viewed:
+                        last_viewed = sub_last
+                    sub_record['lastViewed'] = last_viewed
+                    sub_count = sub_record.get('viewCount') or 0
+                    sub_users_dict = sub_record.get('users') or {}
+                    sub_user_record = sub_users_dict.get(user_name) or {
+                        "userName": user_name,
+                        "userId": user_id
+                    }
+                    sub_user_views = sub_user_record.get("views") or []
+                    sub_user_views.append({"dateViewed": viewed_at})
+                    sub_user_record["views"] = sub_user_views
+                    sub_users_dict[user_name] = sub_user_record
+                    sub_record['users'] = sub_users_dict
+                    sub_view_count = sub_user_record.get("viewCount") or 0
+                    sub_view_count += 1
+                    sub_user_record["viewCount"] = sub_view_count
+                    sub_users_dict[user_name] = sub_user_record
+                    sub_count += 1
+                    sub_meta_type = META_TYPE_IDS.get(record[key + 'MetaType']) or "unknown"
+                    sub_record["viewCount"] = sub_count
+                    sub_record["metaType"] = sub_meta_type
+                    if sub_meta_type == "album":
+                        sub_record["artist"] = record[key + 'Title']
+                        sub_record["artistKey"] = record[key + 'Id']
+                    elif sub_meta_type == "season":
+                        sub_record["show"] = record[key + 'Title']
+                        sub_record["seriesKey"] = record[key + 'Id']
+                        sub_record["index"] = record[key + 'Index']
+
+                    results[sub_id] = sub_record
+
+            results[rating_key] = record
 
         close_connection(connection)
 
+    # Now sort by meta type
     sorted_media = {}
     for rating_key, media in results.items():
+
+        remove_items = ["grandparentMetaType", "parentMetaType", "number", "parentIndex"]
+        for remove in remove_items:
+            if remove in media:
+                del media[remove]
+
         meta_type = media["metaType"]
         meta_list = sorted_media.get(meta_type) or []
-        media['userCount'] = len(media['userList'])
-        del media['userList']
+        media['userCount'] = len(media['users'])
+        media["art"] = "/library/metadata" + str(rating_key) + "/art"
+        media["key"] = "/library/metadata" + str(rating_key) + "/thumb"
+
+        if meta_type == "episode":
+            media["banner"] = "/library/metadata/" + str(rating_key) + "/banner/"
+
+        playCount = 0
+        for user, data in media["users"].items():
+            playCount += len(data["views"])
+        media['playCount'] = playCount
         meta_list.append(media)
         sorted_media[meta_type] = meta_list
 
@@ -2431,11 +2465,7 @@ def fetch_cursor():
 
 
 def close_connection(connection):
-    if connection is not None:
-        Log.Debug("Closing connection..")
-        connection.close()
-    else:
-        Log.Debug("No connection to close!")
+   Log.Debug("No. I don't wanna.")
 
 
 def vcr_ver():
@@ -2444,6 +2474,7 @@ def vcr_ver():
         'msvcr130.dll': 'vc14'
     }
     try:
+        import ctypes.util
         import ctypes.util
 
         # Retrieve linked msvcr dll
