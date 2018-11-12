@@ -5,6 +5,7 @@ accpetable attributes.
 
 """
 import datetime
+from xml.sax.saxutils import escape
 
 ObjectClass = getattr(getattr(Redirect, "_object_class"), "__bases__")[0]
 
@@ -38,7 +39,7 @@ class CustomContainer(ObjectClass):
 
     def to_xml(self):
         string = ""
-        string += ('<' + self.name)
+        string += ('<' + escape(str(self.name)))
 
         if self.show_size is True:
             size = str(len(self.items))
@@ -57,7 +58,7 @@ class CustomContainer(ObjectClass):
                             allowed = True
 
                 if allowed is True:
-                    string += (" " + key + '="' + str(value) + '"')
+                    string += (" " + escape(str(key)) + '="' + escape(str(value)) + '"')
                 else:
                     Log.Error("Attribute " + key + " is not allowed in this container.")
 
@@ -67,7 +68,7 @@ class CustomContainer(ObjectClass):
             for obj in self.items:
                 string += obj.to_xml()
 
-            string += '</' + self.name + '>'
+            string += '</' + escape(self.name) + '>'
 
         else:
             string += '/>\n'

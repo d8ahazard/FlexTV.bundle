@@ -17,6 +17,7 @@ import sys
 import threading
 import time
 import xml.etree.ElementTree as ET
+import xmltodict
 from zipfile import ZipFile, ZIP_DEFLATED
 
 import pychromecast
@@ -28,9 +29,6 @@ from pychromecast.controllers.plex import PlexController
 from subzero.lib.io import FileIO
 
 import log_helper
-from CustomContainerOriginal import MediaContainer, DeviceContainer, CastContainer, ZipObject, StatusContainer, \
-    MetaContainer
-from CustomContainer import AnyContainer
 from flex_container import FlexContainer
 from lib import Plex
 
@@ -246,14 +244,14 @@ def Devices():
 
     Endpoint to scan LAN for cast devices
     """
-    Log.Debug('Recieved a call to fetch cast devices')
+    Log.Debug('Fetching /devices endpoints.')
     # Grab our response header?
     casts = fetch_devices()
-    mc = MediaContainer()
+    mc = FlexContainer()
     for cast in casts:
         Log.Debug("Cast type is " + cast['type'])
         if (cast['type'] == 'cast') | (cast['type'] == 'audio') | (cast['type'] == 'group'):
-            dc = CastContainer(cast)
+            dc = FlexContainer("Device", cast, show_size=False)
             mc.add(dc)
 
     return mc
@@ -269,9 +267,9 @@ def Clients():
     # Grab our response header?
     casts = fetch_devices()
 
-    mc = MediaContainer()
+    mc = FlexContainer()
     for cast in casts:
-        dc = CastContainer(cast)
+        dc = FlexContainer("Device", cast, show_size=False)
         mc.add(dc)
 
     return mc
@@ -370,7 +368,7 @@ def Play():
             if pc is not False:
                 status = "Success"
 
-    oc = MediaContainer({
+    oc = FlexContainer(attributes={
         'Name': 'Playback Status',
         'Status': status,
         'Message': msg
@@ -987,32 +985,23 @@ def Statmenu():
 
 @route(CAST_PREFIX + '/status')
 @route(CAST_PREFIX + '/resources/status')
-def Status(input_name=False):
+@route("/stats/sessions")
+def Status():
     """
     Fetch player status
     TODO: Figure out how to parse and return additional data here
     """
-    uri = "FOOBAR"
-    name = "FOOBAR"
-    show_all = False
-    Log.Debug('Trying to get cast device status here')
-    for key, value in Request.Headers.items():
-        Log.Debug("Header key %s is %s", key, value)
-        if key in ("X-Plex-Clienturi", "Clienturi"):
-            Log.Debug("We have a client URI")
-            uri = value
-
-        if key in ("X-Plex-Clientname", "Clientname"):
-            Log.Debug("X-Plex-Clientname: " + value)
-            name = value
-
-    if input_name is not False:
-        name = input_name
-    if uri == name:
-        show_all = True
+    show_all = True
+    headers = sort_headers(["Clienturi", "Clientname"])
+    uri = headers.get("Clienturi") or False
+    name = headers.get("Clientname") or False
+    if uri | name:
+        show_all = False
 
     chromecasts = fetch_devices()
+    users = query_users()
     devices = []
+    cast_devices = []
 
     for chromecast in chromecasts:
         cast = False
@@ -1028,48 +1017,112 @@ def Status(input_name=False):
             cast = chromecast
 
         if cast is not False:
-            devices.append(cast)
+            if cast['type'] in ['cast', 'audio', 'group']:
+                cast_devices.append(cast)
+            else:
+                devices.append(cast)
 
-    do = ""
+    session_statuses = get_session_status()
 
-    if len(devices) != 0:
-        for device in devices:
-            Log.Debug("We have set a chromecast here.")
+    mc = FlexContainer()
+
+    if len(cast_devices):
+        new_statuses = []
+        for device in cast_devices:
+            Log.Debug("We have set a device here, type is '%s'." % device['type'])
             uris = device['uri'].split(":")
             host = uris[0]
             port = uris[1]
             Log.Debug("Host and port are %s and %s", host, port)
-            cast = pychromecast.Chromecast(host, int(port))
-            Log.Debug("Waiting for device")
-            cast.wait(2)
-            app_id = cast.app_id
+            cast = False
+            try:
+                cast = pychromecast.Chromecast(host, int(port), timeout=3, tries=1)
+            except Exception:
+                Log.Debug("Unable to connect to device.")
+
+            if cast:
+                Log.Debug("Waiting for devices.")
+                cast.wait(2)
+                app_id = cast.app_id
+                meta_dict = False
+                if app_id == "9AC194DC":
+                    pc = PlexController(cast)
+                    cast.register_handler(pc)
+                    plex_status = pc.plex_status()
+                    raw_status = {
+                        'state': plex_status['state'],
+                        'volume': plex_status['volume'],
+                        'muted': plex_status['muted']
+                    }
+                    meta_dict = plex_status['meta']
+                    if 'title' in meta_dict:
+                        delements = []
+                        i = 0
+                        for session in session_statuses:
+                            if (meta_dict['title'] == session['Video']['title']) & (host == session['address']):
+                                delements.append(i)
+                                meta_dict = session['Video']
+                                del session['Video']
+                                for key, value in session.items():
+                                    if key == "userID":
+                                        raw_status["userName"] = users.get(str(value)) or ""
+                                    raw_status[key] = value
+                            i += 1
+                        delements.reverse()
+                        for rem in delements:
+                            del session_statuses[rem]
+                else:
+                    raw_status = {"state": "idle"}
+
+                del device['status']
+                do = FlexContainer("Device", attributes=device, show_size=False)
+                for key, value in raw_status.items():
+                    do.set(key, value)
+                if meta_dict:
+                    md = FlexContainer("Meta", meta_dict, show_size=False)
+                    do.add(md)
+                mc.add(do)
+
+    if len(devices):
+        new_statuses = []
+        for device in devices:
+            del device['status']
+            do = FlexContainer("Device", attributes=device, show_size=False)
             meta_dict = False
-            if app_id == "9AC194DC":
-                pc = PlexController(cast)
-                cast.register_handler(pc)
-                plex_status = pc.plex_status()
-                raw_status = {
-                    'state': plex_status['state'],
-                    'volume': plex_status['volume'],
-                    'muted': plex_status['muted']
-                }
-                meta_dict = plex_status['meta']
+            delements = []
+            i = 0
+            for session in session_statuses:
+                if session['machineIdentifier'] == device['id']:
+                    delements.append(i)
+                    Log.Debug("Session Match.")
+                    meta_dict = session['Video']
+                    del session['Video']
+                    for key, value in session.items():
+                        if key == "userID":
+                            do.set("userName", users.get(str(value)) or "")
+                        do.set(key, value)
+                i += 1
+
+            for delement in delements:
+                del session_statuses[delement]
+
+            if meta_dict:
+                md = FlexContainer("Meta", meta_dict, show_size=False)
+                do.add(md)
             else:
-                raw_status = {"state": "idle"}
+                do.set('state', "idle")
+            mc.add(do)
 
-            Log.Debug("Did we get it?!?! %s", raw_status)
+    if len(session_statuses):
+        for session in session_statuses:
+            meta_dict = session['Video']
+            del session['Video']
+            so = FlexContainer("Device", attributes=session, show_size=False)
+            md = FlexContainer("Meta", meta_dict, show_size=False)
+            so.add(md)
+            mc.add(so)
 
-            do = StatusContainer(
-                dict=raw_status
-            )
-            if meta_dict is not False:
-                mc = MetaContainer(
-                    dict=meta_dict
-                )
-
-                do.add(mc)
-
-    return do
+    return mc
 
 
 @route(APP_PREFIX + '/advanced')
@@ -1370,6 +1423,22 @@ def query_library_sizes():
         close_connection(connection)
 
     return results
+
+
+def query_users():
+    conn = fetch_cursor()
+    cursor = conn[0]
+    connection = conn[1]
+    users = {}
+
+    if cursor is not None:
+        query = """SELECT name, id from accounts;"""
+
+        for name, id in cursor.execute(query):
+            users[str(id)] = name
+
+        close_connection(connection)
+    return users
 
 
 def query_library_quality():
@@ -2653,6 +2722,65 @@ def get_entitlements():
         Log.Debug("No keys, try again.")
 
     return allowed_keys
+
+
+def get_session_status():
+    sessions = []
+    token = False
+    for key, value in Request.Headers.items():
+        if key in ("X-Plex-Token", "Token"):
+            Log.Debug("We have a Token")
+            token = value
+
+    if token:
+        server_port = os.environ.get("PLEXSERVERPORT")
+        if server_port is None:
+            server_port = "32400"
+        server_host = Network.Address
+        if server_host is None:
+            server_host = "localhost"
+
+        try:
+            my_url = "http://%s:%s/status/sessions?X-Plex-Token=%s" % (server_host, server_port, token)
+        except TypeError:
+            my_url = False
+            pass
+
+        if my_url:
+            Log.Debug("Gonna touch myself at '%s'" % my_url)
+            req = HTTP.Request(my_url)
+            req.load()
+            if hasattr(req, 'content'):
+                client_data = req.content
+                parsed_dict = xmltodict.parse(client_data)
+                reply_dict = un_attribute(parsed_dict)
+                mc = reply_dict['MediaContainer']
+                sections = mc.get('Video') or []
+                if type(sections) == dict:
+                    sections = [sections]
+                for session in sections:
+                    client_dict = session.get('Player') or {}
+                    del session['Player']
+                    client_dict['Video'] = session
+                    sessions.append(client_dict)
+    return sessions
+
+
+def un_attribute(xml_dict):
+    dict_out = {}
+    for key, value in xml_dict.items():
+        fixed = key.replace("@", "")
+        if type(value) is unicode:
+            value = value
+        elif type(value) is list:
+            new_list = []
+            for item in value:
+                new_list.append(un_attribute(item))
+            value = new_list
+        else:
+            value = un_attribute(value)
+        dict_out[fixed] = value
+    return dict_out
 
 
 ####################################

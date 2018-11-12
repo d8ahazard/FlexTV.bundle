@@ -1,4 +1,7 @@
 import json
+from datetime import datetime
+from xml.sax.saxutils import escape
+import xmltodict
 
 ObjectClass = getattr(getattr(Redirect, "_object_class"), "__bases__")[0]
 
@@ -66,7 +69,7 @@ class FlexContainer(ObjectClass):
             return len(self.children)
 
     def to_xml(self):
-        self_tag = str(self.tag).capitalize()
+        self_tag = escape(str(self.tag).capitalize())
 
         self_attributes = self.attributes
         if self.container_size:
@@ -99,23 +102,22 @@ class FlexContainer(ObjectClass):
                 value = self_attributes.get(key)
                 if allowed:
                     if value not in [None, ""]:
-                        replace = {
-                            "&": "&amp;",
-                            "<": "&lt;",
-                            ">": "&gt;",
-                            "\"": "&quot;"
-                        }
-                        for search, replace in replace.items():
-                            value = str(value).replace(search, replace)
-
-                        attribute_string += ' %s="%s"' % (key, value)
+                        if type(value) == dict:
+                            child_strings.append(self.child_xml(key, value))
+                        elif type(value) == list:
+                            for child_dict in value:
+                                child_strings.append(self.child_xml(key, child_dict))
+                        else:
+                            esc_value = escape(str(value))
+                            esc_key = escape(str(key))
+                            attribute_string += ' %s="%s"' % (esc_key, esc_value)
                 else:
                     Log.Error("Attribute " + key + " is not allowed in this container.")
 
         if len(child_strings) == 0:
             string = "<%s%s/>" % (self_tag, attribute_string)
         else:
-            child_string = " ".join(child_strings)
+            child_string = "\n".join(child_strings)
             string = "<%s%s>%s</%s>\n" % (self_tag, attribute_string, child_string, self_tag)
 
         return string
@@ -159,3 +161,50 @@ class FlexContainer(ObjectClass):
             result = (self_tag, json_obj)
 
             return result
+
+    def child_xml(self, tag, data):
+        children = []
+        attributes = []
+        for key, value in data.items():
+            if (type(value) == unicode) | (type(value) == str):
+                item_str = '%s="%s"' % (escape(key), escape(value))
+                attributes.append(item_str)
+            if type(value) == dict:
+                children.append(self.child_xml(key, value))
+            if type(value) == list:
+                for item in value:
+                    if type(item) == dict:
+                        item_attributes = []
+                        for sub_key, sub_value in item.items():
+                            item_str = '%s="%s"' % (escape(sub_key), escape(sub_value))
+                            item_attributes.append(item_str)
+                        children.append("<%s %s/>" % (key, " ".join(item_attributes)))
+
+        if len(children):
+            if len(attributes):
+                output = "<%s %s>%s</%s>" % (tag, " ".join(attributes), "\n".join(children), tag)
+            else:
+                output = "<%s>%s</%s>" % (tag, "\n".join(children), tag)
+        else:
+            if len(attributes):
+                output = "<%s %s/>" % (tag, " ".join(attributes))
+            else:
+                output = "<%s/> % tag"
+        return output
+
+
+        return child_string
+
+
+class ZipObject(ObjectClass):
+    def __init__(self, data):
+        ObjectClass.__init__(self, "")
+        self.zipdata = data
+        self.SetHeader("Content-Type", "application/zip")
+
+    def Content(self):
+        self.SetHeader("Content-Disposition",
+                       'attachment; filename="' + datetime.now().strftime("Logs_%y%m%d_%H-%M-%S.zip")
+                       + '"')
+        return self.zipdata
+

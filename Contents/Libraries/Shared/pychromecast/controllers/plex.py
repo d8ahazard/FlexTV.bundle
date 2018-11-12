@@ -46,7 +46,6 @@ class PlexController(BaseController):
         self._status_listeners = []
         self.cast = cast
 
-
     def set_volume(self, percent):
         percent = float(percent) / 100
         self.cast.set_volume(percent)
@@ -97,6 +96,8 @@ class PlexController(BaseController):
         """
         Launch the Plex chromecast app and initiate playback
 
+        :param params:
+        :param callback_function:
         :dict params: Requires the following keys for successful playback-
             'Contentid' - The media key from PMS
             'Contenttype' - 'audio' or 'video'
