@@ -999,7 +999,6 @@ def Status():
         show_all = False
 
     chromecasts = fetch_devices()
-    users = query_users()
     devices = []
     cast_devices = []
 
@@ -1027,18 +1026,15 @@ def Status():
     mc = FlexContainer()
 
     if len(cast_devices):
-        new_statuses = []
         for device in cast_devices:
-            Log.Debug("We have set a device here, type is '%s'." % device['type'])
             uris = device['uri'].split(":")
             host = uris[0]
             port = uris[1]
-            Log.Debug("Host and port are %s and %s", host, port)
             cast = False
             try:
                 cast = pychromecast.Chromecast(host, int(port), timeout=3, tries=1)
             except Exception:
-                Log.Debug("Unable to connect to device.")
+                Log.Error("Unable to connecct to device.")
 
             if cast:
                 Log.Debug("Waiting for devices.")
@@ -1064,8 +1060,6 @@ def Status():
                                 meta_dict = session['Video']
                                 del session['Video']
                                 for key, value in session.items():
-                                    if key == "userID":
-                                        raw_status["userName"] = users.get(str(value)) or ""
                                     raw_status[key] = value
                             i += 1
                         delements.reverse()
@@ -1084,7 +1078,6 @@ def Status():
                 mc.add(do)
 
     if len(devices):
-        new_statuses = []
         for device in devices:
             del device['status']
             do = FlexContainer("Device", attributes=device, show_size=False)
@@ -1098,8 +1091,6 @@ def Status():
                     meta_dict = session['Video']
                     del session['Video']
                     for key, value in session.items():
-                        if key == "userID":
-                            do.set("userName", users.get(str(value)) or "")
                         do.set(key, value)
                 i += 1
 
@@ -2727,10 +2718,15 @@ def get_entitlements():
 def get_session_status():
     sessions = []
     token = False
+    include_extra = False
     for key, value in Request.Headers.items():
         if key in ("X-Plex-Token", "Token"):
             Log.Debug("We have a Token")
             token = value
+        if key in ("X-Plex-IncludeExtra", "IncludeExtra"):
+            check = value
+            if (check == True) | (check == "true"):
+                include_extra = True
 
     if token:
         server_port = os.environ.get("PLEXSERVERPORT")
@@ -2747,7 +2743,7 @@ def get_session_status():
             pass
 
         if my_url:
-            Log.Debug("Gonna touch myself at '%s'" % my_url)
+            Log.Debug("Fetching status froms '%s'" % my_url)
             req = HTTP.Request(my_url)
             req.load()
             if hasattr(req, 'content'):
@@ -2761,6 +2757,17 @@ def get_session_status():
                 for session in sections:
                     client_dict = session.get('Player') or {}
                     del session['Player']
+                    keep = ["Video', ""Media", "Genre", "User", "Country", "Session", "TranscodeSession"]
+                    delete = []
+                    if include_extra is False:
+                        Log.Debug("Filtering")
+                        for key in session:
+                            if (key not in keep) & (type(session[key]) is not unicode):
+                                delete.append(key)
+                    for key in delete:
+                        Log.Debug("Should be deleting key %s" % key)
+                        del session[key]
+
                     client_dict['Video'] = session
                     sessions.append(client_dict)
     return sessions

@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape, quoteattr
 import xmltodict
 
 ObjectClass = getattr(getattr(Redirect, "_object_class"), "__bases__")[0]
@@ -108,9 +108,11 @@ class FlexContainer(ObjectClass):
                             for child_dict in value:
                                 child_strings.append(self.child_xml(key, child_dict))
                         else:
-                            esc_value = escape(str(value))
-                            esc_key = escape(str(key))
-                            attribute_string += ' %s="%s"' % (esc_key, esc_value)
+                            if type(value) == unicode:
+                                value = quoteattr(value)
+                                attribute_string += ' %s=%s' % (escape(str(key)), value)
+                            else:
+                                attribute_string += ' %s="%s"' % (escape(str(key)), value)
                 else:
                     Log.Error("Attribute " + key + " is not allowed in this container.")
 
@@ -166,19 +168,20 @@ class FlexContainer(ObjectClass):
         children = []
         attributes = []
         for key, value in data.items():
-            if (type(value) == unicode) | (type(value) == str):
-                item_str = '%s="%s"' % (escape(key), escape(value))
-                attributes.append(item_str)
             if type(value) == dict:
                 children.append(self.child_xml(key, value))
-            if type(value) == list:
+            elif type(value) == list:
                 for item in value:
                     if type(item) == dict:
                         item_attributes = []
                         for sub_key, sub_value in item.items():
-                            item_str = '%s="%s"' % (escape(sub_key), escape(sub_value))
+                            item_str = '%s=%s' % (escape(str(sub_key)), quoteattr(sub_value))
                             item_attributes.append(item_str)
-                        children.append("<%s %s/>" % (key, " ".join(item_attributes)))
+                        children.append("<%s %s/>" % (escape(str(key)), " ".join(item_attributes)))
+            else:
+                value = quoteattr(value)
+                item_str = '%s=%s' % (escape(str(key)), value)
+                attributes.append(item_str)
 
         if len(children):
             if len(attributes):
@@ -191,9 +194,6 @@ class FlexContainer(ObjectClass):
             else:
                 output = "<%s/> % tag"
         return output
-
-
-        return child_string
 
 
 class ZipObject(ObjectClass):
