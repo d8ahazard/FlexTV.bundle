@@ -18,6 +18,8 @@ import threading
 import time
 import xml.etree.ElementTree as ET
 import xmltodict
+from monitor import Monitor
+
 from zipfile import ZipFile, ZIP_DEFLATED
 
 import pychromecast
@@ -63,12 +65,7 @@ META_TYPE_NAMES = dict(map(reversed, META_TYPE_IDS.items()))
 DEFAULT_CONTAINER_SIZE = 100000
 DEFAULT_CONTAINER_START = 0
 DATE_STRUCTURE = "%Y-%m-%d %H:%M:%S"
-pms_path = pms_path()
-Log.Debug("New PMS Path iss '%s'" % pms_path)
-dbPath = os.path.join(pms_path, "Plug-in Support", "Databases", "com.plexapp.plugins.library.db")
-Log.Debug("Setting DB path to '%s'" % dbPath)
-os.environ['LIBRARY_DB'] = dbPath
-os.environ["PMS_PATH"] = pms_path
+
 
 os_platform = False
 path = None
@@ -79,6 +76,7 @@ path = None
 # from Framework.docutils import Plugin, HTTP, Log, Request
 # from Framework.docutils import Data
 
+Dict['version'] = '1.1.106'
 NAME = 'Flex TV'
 VERSION = '1.1.106'
 APP_PREFIX = '/applications/Cast'
@@ -99,7 +97,13 @@ PLUGIN_IDENTIFIER = "com.plexapp.plugins.FlexTV"
 def Start():
     Plugin.AddViewGroup("Details", viewMode="InfoList", mediaType="items")
     distribution = None
-    libraries_path = os.path.join(pms_path, "Plug-ins", "FlexTV.bundle", "Contents", "Libraries")
+    test_path = sys.path[0].rstrip("\Shared")
+    pms_path_name = pms_path()
+    db_path = os.path.join(pms_path_name, "Plug-in Support", "Databases", "com.plexapp.plugins.library.db")
+    Log.Debug("Setting DB path to '%s'" % db_path)
+    os.environ['LIBRARY_DB'] = db_path
+    os.environ["PMS_PATH"] = pms_path_name
+    libraries_path = sys.path[0].rstrip("\Shared")
     loaded = insert_paths(distribution, libraries_path)
     if loaded:
         Log.Debug("Paths should be loaded!")
@@ -166,12 +170,12 @@ def MainMenu(Rescanned=False):
     and stuff
     """
     Log.Debug("**********  Starting MainMenu  **********")
-    title = NAME + " - " + VERSION
+    title = NAME + " - " + Dict['version']
     if Data.Exists('last_cache'):
         last_cache = Data.Load('last_cache')
         last_cache = float(last_cache)
         time_string = datetime.datetime.fromtimestamp(last_cache).strftime(DATE_STRUCTURE)
-        title = "%s - %s - Last Scan: %s" % (NAME, VERSION, time_string)
+        title = "%s - %s - Last Scan: %s" % (NAME, Dict['version'], time_string)
 
     oc = ObjectContainer(
         title1=title,
@@ -230,7 +234,7 @@ def ValidatePrefs():
     and stuff.
     """
 
-    dependencies = ["helpers"]
+    dependencies = ["helpers", "monitor"]
     log_helper.register_logging_handler(dependencies, level="DEBUG")
     return
 
@@ -244,7 +248,7 @@ def Devices():
 
     Endpoint to scan LAN for cast devices
     """
-    Log.Debug('Fetching /devices endpoints.')
+    Log.Debug('Fetchings /devices endpoint.')
     # Grab our response header?
     casts = fetch_devices()
     mc = FlexContainer()
@@ -886,6 +890,23 @@ def Quality():
 
         mc.add(me)
 
+    return mc
+
+
+@route(STAT_PREFIX + '/system')
+def System():
+    Log.Debug("Querying system specss")
+    mem_data = Monitor.get_memory()
+    cpu_data = Monitor.get_cpu()
+    hdd_data = Monitor.get_disk()
+    data = {
+        "Memory": mem_data,
+        "Cpu": cpu_data,
+        "Disk": hdd_data
+    }
+    mc = FlexContainer("MediaContainer", data)
+
+    Log.Debug("Result: %s" % JSON.StringFromObject(data))
     return mc
 
 
@@ -2518,7 +2539,6 @@ def fetch_cursor():
     connection = None
     if os.environ["Loaded"]:
         import apsw
-        Log.Debug("Shit, we got the librarys!")
         connection = apsw.Connection(os.environ['LIBRARY_DB'])
         cursor = connection.cursor()
     return [cursor, connection]

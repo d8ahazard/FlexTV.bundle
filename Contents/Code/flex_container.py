@@ -69,7 +69,7 @@ class FlexContainer(ObjectClass):
             return len(self.children)
 
     def to_xml(self):
-        self_tag = escape(str(self.tag).capitalize())
+        self_tag = escape(str(self.tag))
 
         self_attributes = self.attributes
         if self.container_size:
@@ -78,17 +78,6 @@ class FlexContainer(ObjectClass):
                 self.child_strings = self.child_strings[self.container_start:container_max]
 
         child_strings = self.child_strings
-
-        if self.show_size is True:
-            if self_attributes is None:
-                self_attributes = {}
-            if "size" in self_attributes:
-                self_attributes["oldSize"] = self_attributes["size"]
-            if self.children is None:
-                self_size = 0
-            else:
-                self_size = len(self.child_strings)
-            self_attributes["size"] = self_size
 
         attribute_string = ""
         if self_attributes is not None:
@@ -115,6 +104,12 @@ class FlexContainer(ObjectClass):
                                 attribute_string += ' %s="%s"' % (escape(str(key)), value)
                 else:
                     Log.Error("Attribute " + key + " is not allowed in this container.")
+
+        if self.show_size is True:
+            attribute_string += ' %s="%s"' % ("size", len(child_strings))
+
+        if self_tag == "MediaContainer":
+            attribute_string += ' version="%s"' % Dict['version']
 
         if len(child_strings) == 0:
             string = "<%s%s/>" % (self_tag, attribute_string)
@@ -179,7 +174,10 @@ class FlexContainer(ObjectClass):
                             item_attributes.append(item_str)
                         children.append("<%s %s/>" % (escape(str(key)), " ".join(item_attributes)))
             else:
-                value = quoteattr(value)
+                if (type(value) == unicode) | (type(value) == str):
+                    value = quoteattr(value)
+                else:
+                    value = '"%s"' % value
                 item_str = '%s=%s' % (escape(str(key)), value)
                 attributes.append(item_str)
 
