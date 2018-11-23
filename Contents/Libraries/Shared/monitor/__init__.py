@@ -99,7 +99,7 @@ class Monitor(object):
             log.debug("Fetching OSX Memory info")
             mem_data = run_command("vm_stat")
             page_size = mem_data.pop(0).split("page size of ")[1].split()[0]
-            adds = ["Pages active", "Pages inactive", "Pages speculative", "Pages throttled", "Pages wired down", "Pages purgeable"]
+            adds = ["Pages active", "Pages inactive", "Pages wired down"]
             mem_free = 0
             mem_total = 0
             for line in mem_data:
