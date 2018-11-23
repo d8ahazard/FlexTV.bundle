@@ -65,7 +65,7 @@ class Monitor(object):
         elif system_name == "MacOSX":
             log.debug("OSX CPU QUERY")
             cpu_string = run_command("sysctl -n machdep.cpu.brand_string")[0].split(" @ ")
-            cpu_freq = run_command("sysctl hw.cpufrequency").split(": ")[1]
+            cpu_freq = run_command("sysctl hw.cpufrequency")[0].split(": ")[1]
             cpu_used = run_command("ps -A -o %cpu | awk '{s+=$1} END {print s}'")[0]
             result = {
                 "clock_speed": normalize_value(cpu_freq),
