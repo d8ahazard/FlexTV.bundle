@@ -59,7 +59,7 @@ class Monitor(object):
             result = {
                 "clock_speed": normalize_value((clock[2] + clock[3]) + "Mhz"),
                 "clock_max": clock_max,
-                "used": used,
+                "used": str(used) + " %",
                 "name": clock_string[0]
             }
         elif system_name == "MacOSX":
