@@ -899,14 +899,24 @@ def System():
     mem_data = Monitor.get_memory()
     cpu_data = Monitor.get_cpu()
     hdd_data = Monitor.get_disk()
-    data = {
-        "Memory": mem_data,
-        "Cpu": cpu_data,
-        "Disk": hdd_data
-    }
-    mc = FlexContainer("MediaContainer", data)
+    net_data = Monitor.get_net()
+    mc = FlexContainer("MediaContainer", show_size=False)
+    mem_container = FlexContainer("Memory", mem_data, show_size=False)
+    cpu_container = FlexContainer("CPU", cpu_data, show_size=False)
+    hdd_container = FlexContainer("Storage", show_size=False)
+    for disk_item in hdd_data:
+        dc = FlexContainer("Disk", disk_item, show_size=False)
+        hdd_container.add(dc)
+    net_container = FlexContainer("Net", show_size=False)
+    for if_name, data in net_data.items():
+        if_container = FlexContainer("Interface", data, show_size=False)
+        if_container.set("Name", if_name)
+        net_container.add(if_container)
 
-    Log.Debug("Result: %s" % JSON.StringFromObject(data))
+    mc.add(mem_container)
+    mc.add(cpu_container)
+    mc.add(hdd_container)
+    mc.add(net_container)
     return mc
 
 
