@@ -98,14 +98,14 @@ class Monitor(object):
         elif system_name == "MacOSX":
             log.debug("Fetching OSX Memory info")
             mem_data = run_command("vm_stat")
-            page_size = mem_data.pop(0).split("page size of ")[1].strip(" bytes")
+            page_size = mem_data.pop(0).split("page size of ")[1].strip(" bytes").strip(".")
             adds = ["active", "inactive", "speculative", "throttled", "wired down", "purgeable"]
             mem_free = 0
             mem_total = 0
             for line in mem_data:
                 info = line.split(":")
                 title = info[0].strip("Pages ").strip()
-                value = int(info[1].strip()) * int(page_size)
+                value = int(info[1].strip().strip(".")) * int(page_size)
                 if title == "free":
                     mem_free = abs(value)
                 elif title in adds:
