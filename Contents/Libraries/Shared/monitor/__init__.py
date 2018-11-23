@@ -180,6 +180,18 @@ class Monitor(object):
         nic_info = {}
         if OsHelper.name() == "Windows":
             log.debug("Get windows stuff here...")
+            net_data = run_command("wmic path Win32_PerfRawData_Tcpip_NetworkInterface get Name,BytesReceivedPersec,"
+                                   "BytesSentPersec,CurrentBandwidth")
+            net_data.pop(0)
+            for line in net_data:
+                info = line.split()
+                device = {
+                    "rx": normalize_value(info.pop(0) + " B"),
+                    "tx": normalize_value(info.pop(0) + " B"),
+                    "max": normalize_value(info.pop(0) + " KB")
+                }
+                interface = " ".join(info)
+                nic_info[interface] = device
         elif OsHelper.name() == "Linux":
             log.debug("Getting 'nix net info")
             net_data = run_command("cat /proc/net/dev")
@@ -209,17 +221,13 @@ class Monitor(object):
                 }
                 tx += nic['tx']
                 rx += nic['rx']
-                nic["tx"] = tx
-                nic["rx"] = rx
+                nic["tx"] = normalize_value("%s b" % tx)
+                nic["rx"] = normalize_value("%s b" % rx)
                 nic_info[interface] = nic
         return nic_info
 
 
-
-
-
-def normalize_value(value):
-    suffix = 'b'
+def normalize_value(value, suffix='b'):
     if value == unicode(value):
         value = value.lower().replace(" ", "")
         num = value
