@@ -198,8 +198,8 @@ class Monitor(object):
             for line in net_data:
                 info = line.split()
                 interface = info[0]
-                tx = info[6]
-                rx = info[9]
+                tx = abs(info[6])
+                rx = abs(info[9])
                 nic = nic_info.get(interface) or {
                     "tx": 0,
                     "rx": 0
