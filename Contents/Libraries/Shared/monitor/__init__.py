@@ -103,8 +103,8 @@ class Monitor(object):
             mem_free = 0
             mem_total = 0
             for line in mem_data:
-                info = line.split()
-                title = info[0].strip(":").strip("Pages ")
+                info = line.split(":")
+                title = info[0].strip("Pages ")
                 value = int(info[1]) * int(page_size)
                 if title == "free":
                     mem_free = abs(value)
