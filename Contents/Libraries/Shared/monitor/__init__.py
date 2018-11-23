@@ -37,9 +37,9 @@ class Monitor(object):
             cpu_max = cpu[1]
             cpu = cpu[0].split()
             result = {
-                "clock_speed": normalize_value(cpu.pop(0) + "Mhz"),
-                "used": cpu.pop(0),
-                "max": normalize_value(cpu_max.strip()),
+                "clock_speed": normalize_value(cpu.pop(0) + "Mhz", 'hz'),
+                "used": str(cpu.pop(0)) + "%",
+                "max": normalize_value(cpu_max.strip(), 'hz'),
                 "name": " ".join(cpu)
             }
         elif system_name == "Linux":
@@ -57,9 +57,9 @@ class Monitor(object):
             clock_max = normalize_value(clock_string[1])
 
             result = {
-                "clock_speed": normalize_value((clock[2] + clock[3]) + "Mhz"),
+                "clock_speed": normalize_value((clock[2] + clock[3]) + "Mhz", 'hz'),
                 "clock_max": clock_max,
-                "used": str(used) + " %",
+                "used": str(used) + "%",
                 "name": clock_string[0]
             }
         elif system_name == "MacOSX":
@@ -68,8 +68,8 @@ class Monitor(object):
             cpu_freq = run_command("sysctl hw.cpufrequency")[0].split(": ")[1]
             cpu_used = run_command("ps -A -o %cpu | awk '{s+=$1} END {print s}'")[0]
             result = {
-                "clock_speed": normalize_value(cpu_freq),
-                "used": str(cpu_used) + " %",
+                "clock_speed": normalize_value(cpu_freq, "hz"),
+                "used": str(cpu_used) + "%",
                 "clock_max": cpu_string[1],
                 "name": cpu_string[0]
             }
@@ -97,20 +97,23 @@ class Monitor(object):
 
         elif system_name == "MacOSX":
             log.debug("Fetching OSX Memory info")
-            mem_data = run_command("""vm_stat | perl -ne '/page size of (\d+)/ and $size=$1; /Pages\s+([^:]+)[^\d]+(
-            \d+)/ and printf("%-16s % 16.2f MB\n", "$1:", $2 * $size / 1048576);'""")
+            mem_data = run_command("vm_stat")
+            page_size = mem_data.pop(0).split("page size of ")[1].strip(" bytes")
             adds = ["active", "inactive", "speculative", "throttled", "wired down", "purgeable"]
             mem_free = 0
             mem_total = 0
             for line in mem_data:
                 info = line.split()
-                title = info[0].strip(":")
-                value = info[1]
-                if title == "Free":
+                title = info[0].strip(":").strip("Pages ")
+                value = int(info[1]) * int(page_size)
+                if title == "free":
                     mem_free = abs(value)
                 elif title in adds:
                     mem_total += abs(value)
             mem_used = mem_total - mem_free
+            mem_total = "%s b" % mem_total
+            mem_used = "%s b" % mem_used
+            mem_free = "%s b" % mem_free
         else:
             mem_total = 0
             mem_free = 0
@@ -151,12 +154,19 @@ class Monitor(object):
                 used_size = float(data[1])
                 free_size = float(data[2])
                 total_size = used_size + free_size
-                percent = total_size / used_size
+                percent = str(total_size / used_size) + "%"
                 used = normalize_value("%s %s" % (used_size, used_tag))
                 free = normalize_value("%s %s" % (free_size, free_tag))
                 total_size = normalize_value("%s %s" % (total_size, free_tag))
                 name = data[0]
                 drive = data[4]
+            elif OsHelper.name() == "MacOSX":
+                name = data[8]
+                total_size = normalize_value(data[1], 'B')
+                used = normalize_value(data[2], 'B')
+                free = normalize_value(data[3], 'B')
+                percent = data[4]
+                drive = data[0]
             else:
                 name = data[5]
                 total_size = normalize_value(data[1], 'B')
@@ -164,6 +174,7 @@ class Monitor(object):
                 free = normalize_value(data[3], 'B')
                 percent = data[4]
                 drive = data[0]
+
             disk = {
                 "percent": percent,
                 "used": used,
@@ -243,8 +254,6 @@ def normalize_value(value, suffix='B'):
                 # log.debug("Found a power: %s" % remove)
                 split_item = value.split(remove)
                 new = split_item[0]
-                if len(split_item) > 1:
-                    suffix = split_item[1]
                 for type_ in [int, float, long]:
                     try:
                         new = type_(new)
