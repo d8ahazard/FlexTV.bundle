@@ -69,7 +69,7 @@ class Monitor(object):
             cpu_used = run_command("ps -A -o %cpu | awk '{s+=$1} END {print s}'")[0]
             result = {
                 "clock_speed": normalize_value(cpu_freq),
-                "used": cpu_used,
+                "used": str(cpu_used) + " %",
                 "clock_max": cpu_string[1],
                 "name": cpu_string[0]
             }
@@ -140,8 +140,8 @@ class Monitor(object):
             data = line.split()
             if OsHelper.name() == "Windows":
                 sizes = ["KB", "MB", "GB", "TB"]
-                used_tag = "Gb"
-                free_tag = "Gb"
+                used_tag = "GB"
+                free_tag = "GB"
                 for size in sizes:
                     if size in headers[1]:
                         used_tag = size[:1]
@@ -159,9 +159,9 @@ class Monitor(object):
                 drive = data[4]
             else:
                 name = data[5]
-                total_size = data[1]
-                used = data[2]
-                free = data[3]
+                total_size = normalize_value(data[1], 'B')
+                used = normalize_value(data[2], 'B')
+                free = normalize_value(data[3], 'B')
                 percent = data[4]
                 drive = data[0]
             disk = {
@@ -221,13 +221,19 @@ class Monitor(object):
                 }
                 tx += nic['tx']
                 rx += nic['rx']
-                nic["tx"] = normalize_value("%s b" % tx)
-                nic["rx"] = normalize_value("%s b" % rx)
+                nic["tx"] = tx
+                nic["rx"] = rx
                 nic_info[interface] = nic
+
+        for interface, nic in nic_info.items():
+            nic["tx"] = normalize_value("%s B" % nic["tx"])
+            nic["rx"] = normalize_value("%s B" % nic["rx"])
+            nic_info[interface] = nic
+
         return nic_info
 
 
-def normalize_value(value, suffix='b'):
+def normalize_value(value, suffix='B'):
     if value == unicode(value):
         value = value.lower().replace(" ", "")
         num = value
