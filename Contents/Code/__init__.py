@@ -109,7 +109,7 @@ def Start():
         Log.Debug("Paths should be loaded!")
         os.environ["Loaded"] = "True"
     else:
-        Log.Debug("Unable to load paths")
+        Log.Debug("Unable to load path")
         os.environ["Loaded"] = "False"
     ObjectContainer.title1 = NAME
     DirectoryObject.thumb = R(ICON)
@@ -123,9 +123,8 @@ def Start():
 
 
 def CacheTimer(mins=10):
-    update_time = mins * 60
-    Log.Debug("Cache timer started, updating in %s minutes, man", mins)
-    Thread.CreateTimer(update_time, CacheTimer)
+    Log.Debug("Cache timer started, updatings in %s minutes, man", mins)
+    Thread.CreateTimer(mins, CacheTimer)
     UpdateCache()
 
 
