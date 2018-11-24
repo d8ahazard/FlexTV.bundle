@@ -125,7 +125,7 @@ def Start():
 def CacheTimer(mins=10):
     update_time = mins * 60
     Log.Debug("Cache timer started, updating in %s minutes, man", mins)
-    threading.Timer(update_time, CacheTimer).start()
+    Thread.CreateTimer(update_time, CacheTimer)
     UpdateCache()
 
 
@@ -133,11 +133,11 @@ def RestartTimer():
     hours = 4
     restart_time = hours * 60 * 60
     Log.Debug("Restart timer started, plugin will re-start in %s hours.", hours)
-    threading.Timer(restart_time, DispatchRestart).start()
+    Thread.CreateTimer(restart_time, DispatchRestart)
 
 
 def UpdateCache():
-    Log.Debug("UpdateCache called")
+    Log.Debug("UpdateCache calleds")
     if Data.Exists('last_cache'):
         last_scan = float(Data.Load('last_cache'))
         now = float(time.time())
@@ -895,22 +895,25 @@ def Quality():
 
 @route(STAT_PREFIX + '/system')
 def System():
-    Log.Debug("Querying system specss")
-    mem_data = Monitor.get_memory()
-    cpu_data = Monitor.get_cpu()
-    hdd_data = Monitor.get_disk()
-    net_data = Monitor.get_net()
+    Log.Debug("Querying system specs")
+    headers = sort_headers(["Friendly"])
+    friendly = headers.get("Friendly") or False
+    mon = Monitor(friendly)
+    mem_data = mon.get_memory()
+    cpu_data = mon.get_cpu()
+    hdd_data = mon.get_disk()
+    net_data = mon.get_net()
     mc = FlexContainer("MediaContainer", show_size=False)
-    mem_container = FlexContainer("Memory", mem_data, show_size=False)
-    cpu_container = FlexContainer("CPU", cpu_data, show_size=False)
-    hdd_container = FlexContainer("Storage", show_size=False)
+    mem_container = FlexContainer("Mem", mem_data, show_size=False)
+    cpu_container = FlexContainer("Cpu", cpu_data, show_size=False)
+    hdd_container = FlexContainer("Hdd", show_size=False)
     for disk_item in hdd_data:
         dc = FlexContainer("Disk", disk_item, show_size=False)
         hdd_container.add(dc)
     net_container = FlexContainer("Net", show_size=False)
     for if_name, data in net_data.items():
         if_container = FlexContainer("Interface", data, show_size=False)
-        if_container.set("Name", if_name)
+        if_container.set("net_name", if_name)
         net_container.add(if_container)
 
     mc.add(mem_container)
@@ -2705,7 +2708,7 @@ def get_entitlements():
     allowed_keys = []
 
     for key, value in Request.Headers.items():
-        Log.Debug("Headers key %s is %s", key, value)
+        Log.Debug("Header key %s is %s", key, value)
         if key in ("X-Plex-Token", "Token"):
             Log.Debug("We have a Token")
             token = value
