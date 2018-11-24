@@ -1,8 +1,4 @@
 import logging
-import os
-import platform
-import re
-import subprocess
 import time
 
 from os_helper import OsHelper
@@ -27,9 +23,11 @@ class Monitor(object):
         cpu_used = 0
         system_name = OsHelper.name()
         if system_name == "Windows":
-            cpu = run_command("wmic cpu get loadpercentage, CurrentClockSpeed, name")[1].split("@")
-            cpu_max = cpu[1].strip()
-            cpu = cpu[0].split()
+            cpu = run_command("wmic cpu get loadpercentage, CurrentClockSpeed, name")[1]
+            cpu_max = 0
+            if "@" in cpu:
+                cpu_max = cpu.split("@")[1].strip
+            cpu = cpu.split()
             cpu_speed = cpu.pop(0) + "Mhz"
             cpu_used = cpu.pop(0)
             cpu_name = " ".join(cpu)
