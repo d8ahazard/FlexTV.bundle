@@ -253,7 +253,11 @@ class Monitor(object):
     @classmethod
     def normalize_value(cls, value, suffix='B'):
         if suffix == "%":
-            num = value
+            num = round(float(value), 2)
+            if cls.is_friendly:
+                num = str(num) + "%"
+            return num
+
         elif value == unicode(value):
             value = value.lower().replace(" ", "")
             num = value
