@@ -23,11 +23,12 @@ class Monitor(object):
         cpu_used = 0
         system_name = OsHelper.name()
         if system_name == "Windows":
-            cpu = run_command("wmic cpu get loadpercentage, CurrentClockSpeed, name")[1]
+            cpu_data = run_command("wmic cpu get loadpercentage, CurrentClockSpeed, name")[1]
             cpu_max = 0
-            if "@" in cpu:
-                cpu_max = cpu.split("@")[1].strip
-            cpu = cpu.split()
+            if "@" in cpu_data:
+                cpu_max = cpu_data.split("@")[1].strip
+            log.debug("CPU DATA: %s" % cpu_data)
+            cpu = cpu_data.split()
             cpu_speed = cpu.pop(0) + "Mhz"
             cpu_used = cpu.pop(0)
             cpu_name = " ".join(cpu)
