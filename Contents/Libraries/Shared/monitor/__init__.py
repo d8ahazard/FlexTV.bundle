@@ -216,9 +216,11 @@ class Monitor(object):
             for line in net_data:
                 info = line.split()
                 interface = info[0].strip(":")
+                net_max = run_command("ethtool eth0 | grep Speed:")[0].split(": ")[1].strip("/s")
                 device = {
                     "net_rx": info[1],
-                    "net_tx": info[9]
+                    "net_tx": info[9],
+                    "net_max": cls.normalize_value(net_max, "b")
                 }
                 nic_info[interface] = device
         elif OsHelper.name() == "MacOSX":
