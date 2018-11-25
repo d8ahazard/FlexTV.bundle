@@ -910,9 +910,8 @@ def System():
         dc = FlexContainer("Disk", disk_item, show_size=False)
         hdd_container.add(dc)
     net_container = FlexContainer("Net", show_size=False)
-    for if_name, data in net_data.items():
-        if_container = FlexContainer("Interface", data, show_size=False)
-        if_container.set("net_name", if_name)
+    for nic in net_data:
+        if_container = FlexContainer("Interface", nic, show_size=False)
         net_container.add(if_container)
 
     mc.add(mem_container)

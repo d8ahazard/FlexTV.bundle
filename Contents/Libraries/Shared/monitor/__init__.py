@@ -1,8 +1,10 @@
+from __future__ import division
 import logging
 import time
 
 from os_helper import OsHelper
 from cmd import run_command
+
 
 log = logging.getLogger(__name__)
 
@@ -70,10 +72,10 @@ class Monitor(object):
     def get_memory(cls):
         system_name = OsHelper.name()
         if system_name == "Windows":
-            mem_total = int(run_command("wmic ComputerSystem get totalPhysicalMemory")[1])
-            mem_free = int(run_command("wmic OS get freePhysicalMemory")[1]) * 1024
-            mem_used = mem_total - mem_free
-            mem_pct_used = mem_total / mem_used
+            mem_total = long(run_command("wmic ComputerSystem get totalPhysicalMemory")[1])
+            mem_free = long(run_command("wmic OS get freePhysicalMemory")[1]) * 1024
+            mem_used = long(mem_total - mem_free) + .0
+            mem_pct_used = (mem_used/mem_total) * 100
             mem_total = "%s B" % mem_total
             mem_free = "%s B" % mem_free
             mem_used = "%s B" % mem_used
@@ -85,7 +87,7 @@ class Monitor(object):
             mem_total = phys_data[1] + " KB"
             mem_free = phys_data[3] + " KB"
             mem_used = phys_data[2] + " KB"
-            mem_pct_used = phys_data[1] / phys_data[2]
+            mem_pct_used = (phys_data[1] / phys_data[2]) * 100
         elif system_name == "MacOSX":
             log.debug("Fetching OSX Memory info")
             mem_data = run_command("vm_stat")
@@ -102,7 +104,7 @@ class Monitor(object):
                 elif title in adds:
                     mem_total += int(value)
             mem_used = mem_total - mem_free
-            mem_pct_used = mem_total / mem_used
+            mem_pct_used = (mem_total / mem_used) * 100
             mem_total = "%s B" % mem_total
             mem_used = "%s B" % mem_used
             mem_free = "%s B" % mem_free
@@ -148,7 +150,7 @@ class Monitor(object):
                 used_size = float(data[1])
                 free_size = float(data[2])
                 total_size = used_size + free_size
-                percent = total_size / used_size
+                percent = (used_size / total_size) * 100
                 used = "%s %s" % (used_size, used_tag)
                 free = "%s %s" % (free_size, free_tag)
                 total_size = "%s %s" % (total_size, free_tag)
@@ -163,11 +165,11 @@ class Monitor(object):
                 total_size = "%s B" % data[1]
                 used = "%s B" % data[2]
                 free = "%s B" % data[3]
-                percent = data[4].strip("%")
+                percent = int(data[2]) / int(data[1])
                 drive = data[0]
 
             disk = {
-                "hdd_pct_free": cls.normalize_value(percent, "%"),
+                "hdd_pct_used": cls.normalize_value(percent, "%"),
                 "hdd_used": cls.normalize_value(used),
                 "hdd_free": cls.normalize_value(free),
                 "hdd_total": cls.normalize_value(total_size),
@@ -175,6 +177,7 @@ class Monitor(object):
                 "hdd_name": name
             }
             disks.append(disk)
+        disks = sorted(disks, key=lambda z: z['hdd_total'], reverse=True)
         return disks
 
     @classmethod
@@ -201,11 +204,12 @@ class Monitor(object):
                 rx2 = int(info.pop(0))
                 tx = tx1 - tx2
                 rx = rx1 - rx2
+                nic_max = (int(info.pop(0)) * 1024) + .0
                 log.debug("Tx1 txt2 and rx1 and rx2 are %s and %s and %s and %s" % (tx1, tx2, rx1, rx2))
                 device = {
                     "net_rx": rx,
                     "net_tx": tx,
-                    "net_max": cls.normalize_value(info.pop(0) + " KB", "B")
+                    "net_max": cls.normalize_value(str(nic_max) + " KB", "B")
                 }
                 interface = " ".join(info)
                 nic_info[interface] = device
@@ -218,8 +222,8 @@ class Monitor(object):
                 interface = info[0].strip(":")
                 net_max = run_command("ethtool eth0 | grep Speed:")[0].split(": ")[1].strip("/s")
                 device = {
-                    "net_rx": info[1],
-                    "net_tx": info[9],
+                    "net_rx": int(info[1]),
+                    "net_tx": int(info[9]),
                     "net_max": cls.normalize_value(net_max, "b")
                 }
                 nic_info[interface] = device
@@ -244,12 +248,26 @@ class Monitor(object):
                 nic["net_rx"] = rx
                 nic_info[interface] = nic
 
+        nic_list = []
         for interface, nic in nic_info.items():
             nic["net_tx"] = cls.normalize_value("%s %s" % (nic['net_tx'], units), "B")
             nic["net_rx"] = cls.normalize_value("%s %s" % (nic['net_rx'], units), "B")
-            nic_info[interface] = nic
-
-        return nic_info
+            nic_rx_pct = 0
+            nic_tx_pct = 0
+            try:
+                nic_rx_pct = (nic["net_rx"] / nic["net_max"]) * 100
+                nic_tx_pct = (nic["net_tx"] / nic["net_max"]) * 100
+            except ZeroDivisionError:
+                log.debug("ZERO DIVISION ERRR")
+                continue
+            nic_rx_pct = cls.normalize_value(nic_rx_pct, "%")
+            nic_tx_pct = cls.normalize_value(nic_tx_pct, "%")
+            nic["net_rx_pct"] = nic_rx_pct
+            nic["net_tx_pct"] = nic_tx_pct
+            nic["nic_name"] = interface
+            nic_list.append(nic)
+        nic_list = sorted(nic_list, key=lambda z: z['net_rx_pct'], reverse=True)
+        return nic_list
 
     @classmethod
     def normalize_value(cls, value, suffix='B'):
@@ -299,3 +317,4 @@ class Monitor(object):
             if type(num) == float:
                 num = round(num, 2)
             return num
+
