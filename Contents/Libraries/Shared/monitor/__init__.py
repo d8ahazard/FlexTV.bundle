@@ -282,8 +282,8 @@ class Monitor(object):
                     "net_tx": 0,
                     "net_rx": 0
                 }
-                tx += nic['tx']
-                rx += nic['rx']
+                tx += nic['net_tx']
+                rx += nic['net_rx']
                 nic["net_tx"] = tx
                 nic["net_rx"] = rx
                 nic_info[interface] = nic
