@@ -9,6 +9,48 @@ from cmd import run_command
 log = logging.getLogger(__name__)
 
 
+def to_base(value):
+    if value == unicode(value):
+        value = value.lower().replace(" ", "")
+        power = 5
+        for remove in ['p', 't', 'g', 'm', 'k', 'b']:
+            if remove in value:
+                split_item = value.split(remove)
+                new = split_item[0]
+                for type_ in [int, float, long]:
+                    try:
+                        new = type_(new)
+                    except ValueError:
+                        continue
+                adjuster = pow(1024, power)
+                value = adjuster * new
+                break
+            power -= 1
+
+    for type_ in [int, float, long]:
+        try:
+            value = type_(value)
+        except ValueError:
+            continue
+    return value
+
+
+def from_base(value, suffix):
+    out_unit = ''
+    if (suffix == "") | (suffix == "b"):
+        suffix = "B"
+    if suffix == "hz":
+        suffix = "Hz"
+    if suffix != "%":
+        for unit in ['', 'K', 'M', 'G', 'T', 'P', 'E', 'Z']:
+            if abs(value) < 1024.0:
+                out_unit = unit
+                break
+            value /= 1024.0
+    value = round(value, 2)
+    return "%s%s%s" % (value, out_unit, suffix)
+
+
 class Monitor(object):
 
     is_friendly = False
@@ -162,10 +204,10 @@ class Monitor(object):
                 else:
                     name = data[5]
 
-                total_size = "%s B" % data[1]
-                used = "%s B" % data[2]
-                free = "%s B" % data[3]
-                percent = int(data[2]) / int(data[1])
+                total_size = to_base(data[1])
+                used = to_base(data[2])
+                free = to_base(data[3])
+                percent = used / free
                 drive = data[0]
 
             disk = {
@@ -182,10 +224,8 @@ class Monitor(object):
 
     @classmethod
     def get_net(cls):
-        units = "B"
         nic_info = {}
         if OsHelper.name() == "Windows":
-            units = "B"
             log.debug("Get windows stuff here...")
             net_data = run_command("wmic path Win32_PerfRawData_Tcpip_NetworkInterface get Name,BytesReceivedPersec,"
                                    "BytesSentPersec,CurrentBandwidth")
@@ -209,7 +249,7 @@ class Monitor(object):
                 device = {
                     "net_rx": rx,
                     "net_tx": tx,
-                    "net_max": cls.normalize_value(str(nic_max) + " KB", "B")
+                    "net_max": to_base(str(nic_max) + " KB")
                 }
                 interface = " ".join(info)
                 nic_info[interface] = device
@@ -224,7 +264,7 @@ class Monitor(object):
                 device = {
                     "net_rx": int(info[1]),
                     "net_tx": int(info[9]),
-                    "net_max": cls.normalize_value(net_max, "b")
+                    "net_max": to_base(net_max)
                 }
                 nic_info[interface] = device
         elif OsHelper.name() == "MacOSX":
@@ -250,8 +290,6 @@ class Monitor(object):
 
         nic_list = []
         for interface, nic in nic_info.items():
-            nic["net_tx"] = cls.normalize_value("%s %s" % (nic['net_tx'], units), "B")
-            nic["net_rx"] = cls.normalize_value("%s %s" % (nic['net_rx'], units), "B")
             nic_rx_pct = 0
             nic_tx_pct = 0
             try:
@@ -260,61 +298,26 @@ class Monitor(object):
             except ZeroDivisionError:
                 log.debug("ZERO DIVISION ERRR")
                 continue
-            nic_rx_pct = cls.normalize_value(nic_rx_pct, "%")
-            nic_tx_pct = cls.normalize_value(nic_tx_pct, "%")
-            nic["net_rx_pct"] = nic_rx_pct
-            nic["net_tx_pct"] = nic_tx_pct
+            nic['net_rx_pct'] = cls.normalize_value(nic_rx_pct, "%")
+            nic['net_tx_pct'] = cls.normalize_value(nic_tx_pct, "%")
+            nic["net_tx"] = cls.normalize_value(nic['net_tx'])
+            nic["net_rx"] = cls.normalize_value(nic['net_rx'])
             nic["nic_name"] = interface
             nic_list.append(nic)
         nic_list = sorted(nic_list, key=lambda z: z['net_rx_pct'], reverse=True)
         return nic_list
 
     @classmethod
-    def normalize_value(cls, value, suffix='B'):
-        if suffix == "%":
+    def normalize_value(cls, value, suffix='B', friendly='nodata'):
+
+        num = to_base(value)
+
+        if friendly == 'nodata':
+            friendly = cls.is_friendly
+
+        if friendly:
+            num = from_base(num, suffix)
+        elif suffix == "%":
             num = round(float(value), 2)
-            if cls.is_friendly:
-                num = str(num) + "%"
-            return num
 
-        elif value == unicode(value):
-            value = value.lower().replace(" ", "")
-            num = value
-            power = 5
-            for remove in ['p', 't', 'g', 'm', 'k', 'b']:
-                if remove in value:
-                    # log.debug("Found a power: %s" % remove)
-                    split_item = value.split(remove)
-                    new = split_item[0]
-                    for type_ in [int, float, long]:
-                        try:
-                            new = type_(new)
-                        except ValueError:
-                            continue
-                    adjuster = pow(1024, power)
-                    # log.debug("Trying to multiply %s by %s" % (adjuster, new))
-                    num = adjuster * new
-                    break
-                power -= 1
-        else:
-            num = value
-        for type_ in [int, float, long]:
-            try:
-                num = type_(num)
-            except ValueError:
-                continue
-        if cls.is_friendly:
-            if (suffix == "") | (suffix == "b"):
-                suffix = "B"
-            if suffix == "hz":
-                suffix = "Hz"
-            for unit in ['', 'k', 'M', 'G', 'T', 'P', 'E', 'Z']:
-                if abs(num) < 1024.0:
-                    return "%3.2f%s%s" % (num, unit, suffix)
-                num /= 1024.0
-            return "%.1f%s%s" % (num, 'Yi', suffix)
-        else:
-            if type(num) == float:
-                num = round(num, 2)
-            return num
-
+        return num
