@@ -146,7 +146,7 @@ class Monitor(object):
                 elif title in adds:
                     mem_total += int(value)
             mem_used = mem_total - mem_free
-            mem_pct_used = (mem_total / mem_used) * 100
+            mem_pct_used = (mem_used / mem_total) * 100
             mem_total = "%s B" % mem_total
             mem_used = "%s B" % mem_used
             mem_free = "%s B" % mem_free
