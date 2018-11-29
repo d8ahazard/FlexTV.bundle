@@ -60,6 +60,22 @@ TAG_TYPE_ARRAY = {
     6: "actor"
 }
 
+META_XML_TAGS = {
+        "movie": "Video",
+        "episode": "Video",
+        "track": "Track",
+        "photo": "Photo",
+        "show": "Directory",
+        "season": "Directory",
+        "album": "Directory",
+        "actor": "Directory",
+        "director": "Directory",
+        "artist": "Directory",
+        "genre": "Directory",
+        "collection": "Directory",
+        "playlist": "Playlist"
+}
+
 META_TYPE_NAMES = dict(map(reversed, META_TYPE_IDS.items()))
 
 DEFAULT_CONTAINER_SIZE = 100000
@@ -789,6 +805,7 @@ def Growth():
             year_array = total_array[y]
             Log.Debug("Year Array: %s" % JSON.StringFromObject(year_array))
             month_total = 0
+            os.environ['TZ'] = 'UTC'
             for m in range(1, 12):
                 m = str(m).zfill(2)
                 if m in year_array:
@@ -804,8 +821,10 @@ def Growth():
                             day_container = FlexContainer("Day", {"value": d}, False)
                             records = month_array[d]
                             for record in records:
-                                ac = FlexContainer("Added", record, False)
                                 record_type = record["type"]
+                                record["addedAt"] = int(time.mktime(time.strptime(record["addedAt"], "%Y-%m-%d %H:%M:%S")))
+                                tag_name = META_XML_TAGS.get(record_type) or "Undefined"
+                                ac = FlexContainer(tag_name, record, False)
                                 temp_day_count = types_day.get(record_type) or 0
                                 temp_month_count = types_month.get(record_type) or 0
                                 temp_year_count = types_year.get(record_type) or 0
@@ -835,11 +854,16 @@ def Growth():
 
 @route(STAT_PREFIX + '/library/popular')
 def Popular():
+
     results = query_library_popular()
     mc = FlexContainer()
     for section in results:
-        sc = FlexContainer(section, limit=True)
+        sc = FlexContainer('Hub', limit=True)
+        sc.set('hubIdentifier', section)
+        sc.set('title', section.capitalize())
         for record in results[section]:
+            rec_type = record["type"]
+            tag_type = META_XML_TAGS.get(rec_type) or "Undefined"
             rec_users = {}
             if "users" in record:
                 rec_users = record["users"]
@@ -848,7 +872,7 @@ def Popular():
                     del record["userName"]
                 if "userId" in record:
                     del record["userId"]
-            me = FlexContainer("Media", record, show_size=False)
+            me = FlexContainer(tag_type, record, show_size=False)
             usc = FlexContainer("Users", show_size=False)
             view_total = 0
             for userName, userData in rec_users.items():
@@ -902,7 +926,7 @@ def System():
     cpu_data = mon.get_cpu()
     hdd_data = mon.get_disk()
     net_data = mon.get_net()
-    mc = FlexContainer("MediaContainer", show_size=False)
+    mc = FlexContainer(show_size=False)
     mem_container = FlexContainer("Mem", mem_data, show_size=False)
     cpu_container = FlexContainer("Cpu", cpu_data, show_size=False)
     hdd_container = FlexContainer("Hdd", show_size=False)
@@ -934,11 +958,12 @@ def User():
             del user['meta']
             del user['devices']
             uc = FlexContainer("User", user, False)
-            sc = FlexContainer("Views")
+            sc = FlexContainer("Views", show_size=False)
             for meta, items in user_meta.items():
                 vc = FlexContainer(meta, limit=True)
                 for item in items:
-                    ic = FlexContainer("Meta", item)
+                    tag_name = META_XML_TAGS.get(item['type']) or "Undefined"
+                    ic = FlexContainer(tag_name, item, show_size=False)
                     vc.add(ic)
 
                 sc.add(vc)
@@ -1496,7 +1521,7 @@ def query_library_quality():
             select md.title, md3.title as grandparentTitle, 
             md.id as ratingKey, mi.width, mi.height, mi.size as fileSize, mi.duration, mi.bitrate, mi.container, mi.video_codec as videoCodec,
             mi.audio_codec as audioCodec, mi.display_aspect_ratio as aspectRatio, mi.frames_per_second as framesPerSecond,
-            mi.audio_channels as audioChannels, md.library_section_id as sectionId, md.metadata_type as metaType,
+            mi.audio_channels as audioChannels, md.library_section_id as sectionId, md.metadata_type as type,
             ls.name as sectionName from media_items as mi
             inner join metadata_items as md
             on mi.metadata_item_id = md.id
@@ -1526,7 +1551,7 @@ def query_library_quality():
                     dictz["thumb"] = "/library/metadata" + str(value) + "/thumb"
 
                 dictz[title] = row[i]
-                if title == "metaType":
+                if title == "type":
                     meta_type = META_TYPE_IDS.get(value) or value
                     dictz[title] = meta_type
 
@@ -1708,7 +1733,7 @@ def query_tag_stats(selection, headers):
 
         return results
     else:
-        Log.Error("DB Connection error!")
+        Log.Error("DB Connsection error!")
         return None
 
 
@@ -2042,7 +2067,7 @@ def query_user_stats():
                 "title": title,
                 "parentTitle": parent_title,
                 "grandparentTitle": grandparent_title,
-                "librarySection": library_section,
+                "librarySectionID": library_section,
                 "lastViewedAt": last_viewed,
                 "type": meta_type,
                 "ratingKey": rating_key,
@@ -2287,10 +2312,9 @@ def query_library_growth(headers):
     if cursor is not None:
         Log.Debug("Ready to query!")
         query = """
-            SELECT mi1.id, mi1.title, mi1.year, mi1.metadata_type, mi1.created_at, mi1.tags_genre AS genre, mi1.tags_country AS country, mi1.parent_id,
-            mi2.title AS parent_title, mi2.parent_id AS grandparent_id, mi2.tags_genre AS parent_genre, mi2.tags_country AS parent_country,
-            mi3.title AS grandparent_title, mi3.tags_genre AS grandparent_genre, mi3.tags_country AS grandparent_country, 
-            mi1.library_section_id as section
+            SELECT mi1.id, mi1.title, mi1.year, mi1.metadata_type, mi1.created_at, mi1.tags_genre AS genre, 
+            mi1.tags_country AS country, mi1.parent_id as parentRatingKey, mi2.title AS parent_title,
+            mi2.parent_id AS grandparentRatingKey, mi3.title AS grandparent_title, mi1.library_section_id as section
             FROM metadata_items AS mi1
             LEFT JOIN metadata_items AS mi2
             ON mi1.parent_id = mi2.id
@@ -2307,8 +2331,8 @@ def query_library_growth(headers):
         i = 0
         container_max = container_start + container_size
         for rating_key, title, year, meta_type, created_at, genres, country, \
-            parent_id, parent_title, parent_genre, parent_country, \
-            grandparent_id, grandparent_title, grandparent_genre, grandparent_country, section \
+            parentRatingKey, parent_title, \
+            grandparentRatingKey, grandparent_title, section \
                 in cursor.execute(query, params):
             if i >= container_max:
                 break
@@ -2319,13 +2343,9 @@ def query_library_growth(headers):
                     "ratingKey": rating_key,
                     "title": title,
                     "parentTitle": parent_title,
-                    "parentId": parent_id,
-                    "parentGenre": parent_genre,
-                    "parentCountry": parent_country,
+                    "parentRatingKey": parentRatingKey,
                     "grandparentTitle": grandparent_title,
-                    "grandparentId": grandparent_id,
-                    "grandparentGenre": grandparent_genre,
-                    "grandparentCountry": grandparent_country,
+                    "grandparentRatingKey": grandparentRatingKey,
                     "year": year,
                     "thumb": "/library/metadata/" + str(rating_key) + "/thumb",
                     "art": "/library/metadata/" + str(rating_key) + "/art",
@@ -2373,10 +2393,10 @@ def query_library_popular():
     if cursor is not None:
         query = """
             SELECT
-                sm.library_section_id as sectionId, sm.[index] as number, mi2.title as parentTitle,
-                sm.title, sm.viewed_at as lastViewed, mi.id as ratingKey, sm.account_id as userId, accounts.name as userName,
-                mi.metadata_type as metaType, mi2.id as parentId, mi2.metadata_type as parentMetaType, mi2.[index] as parentIndex,
-                mi3.title as grandparentTitle, mi3.id as grandparentId, mi3.metadata_type as grandparentMetaType
+                sm.library_section_id as sectionId, sm.[index] as number, mi2.title as parentTitle, mi.rating,
+                sm.title, sm.viewed_at as lastViewed, mi.id as ratingKey, mi.tags_genre as genre, sm.account_id as userId, accounts.name as userName,
+                mi.metadata_type as type, mi2.id as parentRatingKey, mi2.metadata_type as parentType, mi2.[index] as parentIndex,
+                mi3.title as grandparentTitle, mi3.id as grandparentRatingKey, mi3.metadata_type as grandparentType
             FROM metadata_item_views as sm
             INNER JOIN metadata_items as mi
                 ON 
@@ -2406,7 +2426,7 @@ def query_library_popular():
                 value = row[count]
                 record[key] = value
 
-                if key == "metaType":
+                if key == "type":
                     meta_type = META_TYPE_IDS.get(value) or value
                     record[key] = meta_type
 
@@ -2449,7 +2469,8 @@ def query_library_popular():
                     sub_record = results.get(sub_id) or {
                         "ratingKey": record[key + 'Id'],
                         "title": record[key + 'Title'],
-                        "lastViewed": last_viewed
+                        "lastViewed": last_viewed,
+                        "genre": record['genre']
                     }
                     sub_last = sub_record['lastViewed']
                     if sub_last > last_viewed:
@@ -2471,15 +2492,12 @@ def query_library_popular():
                     sub_user_record["playCount"] = sub_view_count
                     sub_users_dict[user_name] = sub_user_record
                     sub_count += 1
-                    sub_meta_type = META_TYPE_IDS.get(record[key + 'MetaType']) or "unknown"
+                    sub_meta_type = META_TYPE_IDS.get(record[key + 'Type']) or "unknown"
                     sub_record["playCount"] = sub_count
-                    sub_record["metaType"] = sub_meta_type
-                    if sub_meta_type == "album":
-                        sub_record["artist"] = record[key + 'Title']
-                        sub_record["artistKey"] = record[key + 'Id']
-                    elif sub_meta_type == "season":
-                        sub_record["show"] = record[key + 'Title']
-                        sub_record["seriesKey"] = record[key + 'Id']
+                    sub_record["type"] = sub_meta_type
+                    sub_record["parentTitle"] = record[key + 'Title']
+                    sub_record["parentKey"] = record[key + 'RatingKey']
+                    if sub_meta_type == "season":
                         sub_record["index"] = record[key + 'Index']
 
                     results[sub_id] = sub_record
@@ -2492,19 +2510,19 @@ def query_library_popular():
     sorted_media = {}
     for rating_key, media in results.items():
 
-        remove_items = ["grandparentMetaType", "parentMetaType", "number", "parentIndex"]
+        remove_items = ["grandparentType", "parentType", "number", "parentIndex"]
         for remove in remove_items:
             if remove in media:
                 del media[remove]
 
-        meta_type = media["metaType"]
+        meta_type = media["type"]
         meta_list = sorted_media.get(meta_type) or []
         media['userCount'] = len(media['users'])
-        media["art"] = "/library/metadata" + str(rating_key) + "/art"
-        media["key"] = "/library/metadata" + str(rating_key) + "/thumb"
+        media["art"] = "/library/metadata/" + str(media['ratingKey']) + "/art"
+        media["key"] = "/library/metadata/" + str(media['ratingKey']) + "/thumb"
 
         if meta_type == "episode":
-            media["banner"] = "/library/metadata/" + str(rating_key) + "/banner/"
+            media["banner"] = "/library/metadata/" + str(media['ratingKey']) + "/banner/"
 
         playCount = 0
         for user, data in media["users"].items():

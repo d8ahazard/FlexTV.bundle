@@ -290,16 +290,6 @@ class Monitor(object):
 
         nic_list = []
         for interface, nic in nic_info.items():
-            nic_rx_pct = 0
-            nic_tx_pct = 0
-            try:
-                nic_rx_pct = (nic["net_rx"] / nic["net_max"]) * 100
-                nic_tx_pct = (nic["net_tx"] / nic["net_max"]) * 100
-            except ZeroDivisionError:
-                log.debug("ZERO DIVISION ERRR")
-                continue
-            nic['net_rx_pct'] = cls.normalize_value(nic_rx_pct, "%")
-            nic['net_tx_pct'] = cls.normalize_value(nic_tx_pct, "%")
             nic["net_tx"] = cls.normalize_value(nic['net_tx'])
             nic["net_rx"] = cls.normalize_value(nic['net_rx'])
             nic["nic_name"] = interface

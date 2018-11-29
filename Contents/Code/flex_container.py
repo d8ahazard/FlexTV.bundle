@@ -69,7 +69,8 @@ class FlexContainer(ObjectClass):
             return len(self.children)
 
     def to_xml(self):
-        self_tag = escape(str(self.tag))
+        s = escape(str(self.tag))
+        self_tag = s[0].upper() + s[1:]
 
         self_attributes = self.attributes
         if self.container_size:
@@ -153,7 +154,8 @@ class FlexContainer(ObjectClass):
 
             return json_string
         else:
-            self_tag = str(self.tag).capitalize()
+            s = str(self.tag)
+            self_tag = s[0].upper() + s[1:]
             Log.Debug("Appending child %s " % self_tag)
             result = (self_tag, json_obj)
 
