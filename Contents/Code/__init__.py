@@ -1052,7 +1052,7 @@ def Status():
     headers = sort_headers(["Clienturi", "Clientname"])
     uri = headers.get("Clienturi") or False
     name = headers.get("Clientname") or False
-    if uri | name:
+    if uri is not False | name is not False:
         show_all = False
 
     chromecasts = fetch_devices()
