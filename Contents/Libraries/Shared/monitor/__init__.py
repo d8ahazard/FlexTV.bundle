@@ -172,7 +172,7 @@ class Monitor(object):
         if os_name == "Windows":
             disk_data = run_command("powershell get-psdrive -psprovider filesystem")
         else:
-            disk_data = run_command("df -h | grep /dev")
+            disk_data = run_command("df -Pl")
 
         header_line = disk_data.pop(0)
         del disk_data[0]
@@ -199,15 +199,11 @@ class Monitor(object):
                 name = data[0]
                 drive = data[4]
             else:
-                if OsHelper.name() == "MacOSX":
-                    name = data[8]
-                else:
-                    name = data[5]
-
-                total_size = to_base(data[1])
-                used = to_base(data[2])
-                free = to_base(data[3])
-                percent = used / free
+                name = data[5]
+                total_size = data[1]
+                used = data[2]
+                free = data[3]
+                percent = data[4].rstrip("%")
                 drive = data[0]
 
             disk = {
