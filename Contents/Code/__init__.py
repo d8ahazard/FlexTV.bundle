@@ -2464,10 +2464,10 @@ def query_library_popular():
 
             for key in subkeys:
                 # Build/check parent, grandparents
-                if record[key + "Id"] is not None:
-                    sub_id = record[key + "Id"]
+                if record[key + "RatingKey"] is not None:
+                    sub_id = record[key + "RatingKey"]
                     sub_record = results.get(sub_id) or {
-                        "ratingKey": record[key + 'Id'],
+                        "ratingKey": record[key + 'RatingKey'],
                         "title": record[key + 'Title'],
                         "lastViewed": last_viewed,
                         "genre": record['genre']
@@ -2496,7 +2496,7 @@ def query_library_popular():
                     sub_record["playCount"] = sub_count
                     sub_record["type"] = sub_meta_type
                     sub_record["parentTitle"] = record[key + 'Title']
-                    sub_record["parentKey"] = record[key + 'RatingKey']
+                    sub_record["parentRatingKey"] = record[key + 'RatingKey']
                     if sub_meta_type == "season":
                         sub_record["index"] = record[key + 'Index']
 
