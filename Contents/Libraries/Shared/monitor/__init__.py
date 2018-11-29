@@ -294,7 +294,7 @@ class Monitor(object):
             nic["net_rx"] = cls.normalize_value(nic['net_rx'])
             nic["nic_name"] = interface
             nic_list.append(nic)
-        nic_list = sorted(nic_list, key=lambda z: z['net_rx_pct'], reverse=True)
+        nic_list = sorted(nic_list, key=lambda z: z['net_rx'], reverse=True)
         return nic_list
 
     @classmethod
