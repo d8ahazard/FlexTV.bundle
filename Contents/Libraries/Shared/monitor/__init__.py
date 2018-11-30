@@ -175,7 +175,6 @@ class Monitor(object):
             disk_data = run_command("df -Pl")
 
         header_line = disk_data.pop(0)
-        del disk_data[0]
         headers = header_line.split()
         for line in disk_data:
             data = line.split()
@@ -199,7 +198,7 @@ class Monitor(object):
                 name = data[0]
                 drive = data[4]
             else:
-                name = data[5]
+                name = " ".join(data[5:])
                 total_size = data[1]
                 used = data[2]
                 free = data[3]
@@ -215,7 +214,7 @@ class Monitor(object):
                 "hdd_name": name
             }
             disks.append(disk)
-        disks = sorted(disks, key=lambda z: z['hdd_total'], reverse=True)
+        disks = sorted(disks, key=lambda z: z['hdd_total'], reverse=False)
         return disks
 
     @classmethod
