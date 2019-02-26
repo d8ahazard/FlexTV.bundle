@@ -176,6 +176,9 @@ class Monitor(object):
 
         header_line = disk_data.pop(0)
         headers = header_line.split()
+        if OsHelper.name() == "Windows":
+            disk_data.pop(0)
+
         for line in disk_data:
             data = line.split()
             if OsHelper.name() == "Windows":
