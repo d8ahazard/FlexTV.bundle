@@ -1292,7 +1292,11 @@ def fetch_servers():
 
     if token:
         port = os.environ.get("PLEXSERVERPORT")
+        if port is None:
+            port = "32400"
         url = Network.Address
+        if url is None:
+            url = "localhost"
         myurl = 'http://' + url + ':' + port + '/servers?X-Plex-Token=' + token
         Log.Debug("Gonna connect to %s" % myurl)
         req = HTTP.Request(myurl)
