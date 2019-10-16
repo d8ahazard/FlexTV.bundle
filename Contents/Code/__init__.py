@@ -154,10 +154,14 @@ def RestartTimer():
 def UpdateCache():
     Log.Debug("UpdateCache calleds")
     if Data.Exists('last_cache'):
-        last_scan = float(Data.Load('last_cache'))
+        cache_date = 1545730073
+        try:
+            cache_date = float(Data.Load('last_cache'))
+        except ValueError, e:
+            Log.Debug("Value error again " + Data.Load('last_cache'))
         now = float(time.time())
-        if now > last_scan:
-            time_diff = now - last_scan
+        if now > cache_date:
+            time_diff = now - cache_date
             time_mins = time_diff / 60
             if time_mins > 10:
                 Log.Debug("Scanning devices, it's been %s minutes since our last scan." % time_mins)
@@ -165,11 +169,11 @@ def UpdateCache():
             else:
                 Log.Debug("Devices will be re-cached in %s minutes" % round(10 - time_mins))
         else:
-            time_diff = last_scan - now
+            time_diff = cache_date - now
             time_mins = 10 - round(time_diff / 60)
             Log.Debug("Device scan set for %s minutes from now." % time_mins)
 
-        Log.Debug("Diffs are %s and %s and %s." % (last_scan, now, time_diff))
+        Log.Debug("Diffs are %s and %s and %s." % (cache_date, now, time_diff))
 
     else:
         scan_devices()
@@ -181,15 +185,18 @@ def UpdateCache():
 @route(APP_PREFIX + '/MainMenu')
 def MainMenu(Rescanned=False):
     """
-    Main menu
-    and stuff
+    Main menu for the Plex UI
     """
     Log.Debug("**********  Starting MainMenu  **********")
     title = NAME + " - " + Dict['version']
+    cache_stamp = 1545730073
     if Data.Exists('last_cache'):
         last_cache = Data.Load('last_cache')
-        last_cache = float(last_cache)
-        time_string = datetime.datetime.fromtimestamp(last_cache).strftime(DATE_STRUCTURE)
+        try:
+            cache_stamp = float(last_cache)
+        except ValueError, e:
+            Log.Debug("Value error")
+        time_string = datetime.datetime.fromtimestamp(cache_stamp).strftime(DATE_STRUCTURE)
         title = "%s - %s - Last Scan: %s" % (NAME, Dict['version'], time_string)
 
     oc = ObjectContainer(
@@ -260,7 +267,6 @@ def ValidatePrefs():
 @route(CAST_PREFIX + '/devices')
 def Devices():
     """
-
     Endpoint to scan LAN for cast devices
     """
     Log.Debug('Fetchings /devices endpoint.')
@@ -1236,7 +1242,14 @@ def fetch_devices():
     else:
         Log.Debug("Returning cached data")
         casts_string = Data.Load('device_json')
-        casts = JSON.ObjectFromString(casts_string)
+        valid = False
+        try:
+            valid = True
+            casts = JSON.ObjectFromString(casts_string)
+        except JSONDecodeError, e:
+            Log.Debug("JSON Decode Error")
+        if valid is False:
+            casts = scan_devices()
 
     token = False
     for key, value in Request.Headers.items():
